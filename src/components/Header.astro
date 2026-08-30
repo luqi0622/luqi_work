@@ -1,0 +1,121 @@
+---
+import { Icon } from 'astro-icon/components';
+
+interface Props {
+  nav: { label: string; href: string }[];
+  siteName: string;
+}
+
+const { nav, siteName } = Astro.props;
+const currentPath = Astro.url.pathname;
+---
+
+<header
+  class="sticky top-0 z-40 border-b border-zinc-200/70 bg-white/80 backdrop-blur-md transition-colors dark:border-zinc-800/70 dark:bg-zinc-950/80"
+>
+  <div class="mx-auto flex h-16 max-w-4xl items-center justify-between px-4 sm:px-6">
+    <!-- 品牌 -->
+    <a
+      href="/"
+      class="group flex items-center gap-2 text-lg font-semibold tracking-tight text-zinc-900 transition-colors dark:text-zinc-100"
+    >
+      <span
+        class="flex h-7 w-7 items-center justify-center rounded-md bg-indigo-600 text-sm font-bold text-white transition-transform group-hover:scale-105 dark:bg-indigo-500"
+        aria-hidden="true"
+      >
+        L
+      </span>
+      <span class="hidden sm:inline">{siteName}</span>
+    </a>
+
+    <!-- 桌面端导航 -->
+    <nav class="hidden items-center gap-1 md:flex" aria-label="主导航">
+      {
+        nav.map((item) => {
+          const active =
+            item.href === '/' ? currentPath === '/' : currentPath.startsWith(item.href);
+          return (
+            <a
+              href={item.href}
+              class:list={[
+                'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                active
+                  ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
+                  : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100',
+              ]}
+            >
+              {item.label}
+            </a>
+          );
+        })
+      }
+    </nav>
+
+    <div class="flex items-center gap-1">
+      <!-- 主题切换 -->
+      <button
+        id="theme-toggle"
+        type="button"
+        aria-label="切换亮暗模式"
+        class="flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+      >
+        <Icon name="lucide:sun" class="h-[1.15rem] w-[1.15rem] dark:hidden" />
+        <Icon name="lucide:moon" class="hidden h-[1.15rem] w-[1.15rem] dark:block" />
+      </button>
+
+      <!-- 移动端菜单按钮 -->
+      <button
+        id="mobile-menu-btn"
+        type="button"
+        aria-label="打开菜单"
+        aria-expanded="false"
+        class="flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 md:hidden dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+      >
+        <Icon name="lucide:menu" class="h-5 w-5" />
+      </button>
+    </div>
+  </div>
+
+  <!-- 移动端导航抽屉 -->
+  <nav
+    id="mobile-menu"
+    class="hidden border-t border-zinc-200/70 bg-white px-4 pb-4 pt-2 md:hidden dark:border-zinc-800/70 dark:bg-zinc-950"
+    aria-label="移动端导航"
+  >
+    {
+      nav.map((item) => {
+        const active =
+          item.href === '/' ? currentPath === '/' : currentPath.startsWith(item.href);
+        return (
+          <a
+            href={item.href}
+            class:list={[
+              'block rounded-md px-3 py-2 text-sm font-medium transition-colors',
+              active
+                ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
+                : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100',
+            ]}
+          >
+            {item.label}
+          </a>
+        );
+      })
+    }
+  </nav>
+</header>
+
+<script>
+  // 主题切换
+  document.getElementById('theme-toggle')?.addEventListener('click', () => {
+    const isDark = document.documentElement.classList.toggle('dark');
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+  });
+
+  // 移动端菜单
+  const btn = document.getElementById('mobile-menu-btn');
+  const menu = document.getElementById('mobile-menu');
+  btn?.addEventListener('click', () => {
+    const open = menu?.classList.toggle('hidden') === false;
+    btn.setAttribute('aria-expanded', String(open));
+  });
+</script>

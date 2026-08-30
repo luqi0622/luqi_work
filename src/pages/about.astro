@@ -1,0 +1,128 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import SocialLinks from '@/components/SocialLinks.astro';
+import { Icon } from 'astro-icon/components';
+import { SITE } from '@/config';
+
+const skills = [
+  {
+    icon: 'lucide:cpu',
+    title: '光子计算 / 硅基光电子',
+    items: ['波导与器件仿真（Lumerical / FDTD / MODE）', '光子神经网络与光互连', '参数自动化扫描与寻优'],
+  },
+  {
+    icon: 'lucide:terminal',
+    title: '自动化工具开发',
+    items: ['Python 自动化脚本与工作流', 'Lumerical API 批量仿真', 'Tkinter / Web 小工具'],
+  },
+  {
+    icon: 'lucide:globe',
+    title: 'Web 开发',
+    items: ['Astro / React / Tailwind CSS', 'Vercel 部署与静态站点', '本站即由 Astro 构建'],
+  },
+];
+
+const faqs = [
+  {
+    q: '这个网站是用什么搭建的？',
+    a: 'Astro + Tailwind CSS，部署在 Vercel 上。文章用 Markdown/MDX 写作，评论系统基于 giscus（GitHub Discussions）。',
+  },
+  {
+    q: '/tianyuanFood 是什么？',
+    a: '这是我此前做的一个企业官网练手项目（React + Vite），作为子站保留在这里，可以在「项目」页找到入口。',
+  },
+  {
+    q: '可以转载文章吗？',
+    a: '欢迎转载，请注明出处并附上原文链接。学术相关内容如需引用请先与我确认。',
+  },
+];
+---
+
+<BaseLayout title="关于" description={`关于 ${SITE.name}：研究背景、工程经验与正在关注的方向`}>
+  <section class="py-12 sm:py-16">
+    <h1 class="flex items-center gap-2.5 text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl dark:text-zinc-100">
+      <Icon name="lucide:user-round" class="h-7 w-7 text-zinc-400" />
+      关于我
+    </h1>
+
+    <div class="mt-8 flex flex-col gap-8">
+      <!-- 经历介绍（占位，请自行替换） -->
+      <div class="prose max-w-none">
+        <p>
+          你好，我是 {SITE.name}，一名 Researcher & Engineer，专注于光子计算与自动化工具开发。
+        </p>
+        <p>
+          我长期在光子计算领域做研究，日常工作围绕硅基光电子器件的设计与仿真展开——
+          用 Lumerical 做波导建模、跑参数扫描、寻找最优结构。大量重复性工作让我养成了一个习惯：
+          <strong>凡是做过两遍的事情，就写成自动化脚本</strong>。于是慢慢积累了各种小工具、
+          批处理脚本和提效网页。
+        </p>
+        <p>
+          这个网站是我的个人基地：一部分记录研究中的思考与阶段性结果，一部分分享折腾工具的过程，
+          也留一块地方放生活里值得记住的碎片。欢迎通过下方的联系方式找我交流。
+        </p>
+      </div>
+
+      <!-- 当前关注 / 技能树 -->
+      <div>
+        <h2 class="mb-4 flex items-center gap-2 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+          <Icon name="lucide:compass" class="h-5 w-5 text-zinc-400" />
+          正在做的事
+        </h2>
+        <div class="grid gap-4 sm:grid-cols-3">
+          {
+            skills.map((group) => (
+              <div class="rounded-xl border border-zinc-200/70 p-5 transition-all hover:-translate-y-0.5 hover:shadow-sm dark:border-zinc-800/70 dark:hover:shadow-zinc-950/50">
+                <div class="flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+                  <Icon name={group.icon} class="h-5 w-5 text-indigo-500 dark:text-indigo-400" />
+                  <h3 class="text-sm font-semibold">{group.title}</h3>
+                </div>
+                <ul class="mt-3 space-y-2">
+                  {group.items.map((item) => (
+                    <li class="flex items-start gap-1.5 text-sm text-zinc-500 dark:text-zinc-400">
+                      <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-indigo-400" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+
+      <!-- FAQ -->
+      <div>
+        <h2 class="mb-4 flex items-center gap-2 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+          <Icon name="lucide:circle-help" class="h-5 w-5 text-zinc-400" />
+          常见问题
+        </h2>
+        <div class="space-y-3">
+          {
+            faqs.map((faq) => (
+              <details class="group rounded-xl border border-zinc-200/70 dark:border-zinc-800/70">
+                <summary class="flex cursor-pointer items-center justify-between gap-3 p-4 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  {faq.q}
+                  <Icon
+                    name="lucide:chevron-down"
+                    class="h-4 w-4 shrink-0 text-zinc-400 transition-transform group-open:rotate-180"
+                  />
+                </summary>
+                <p class="px-4 pb-4 text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{faq.a}</p>
+              </details>
+            ))
+          }
+        </div>
+      </div>
+
+      <!-- 联系方式 -->
+      <div>
+        <h2 class="mb-4 flex items-center gap-2 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+          <Icon name="lucide:mail" class="h-5 w-5 text-zinc-400" />
+          找到我
+        </h2>
+        <SocialLinks />
+      </div>
+    </div>
+  </section>
+</BaseLayout>

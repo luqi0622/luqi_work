@@ -1,0 +1,31 @@
+---
+import { getCollection } from 'astro:content';
+import { BLOG_TAGS } from '@/config';
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import BlogFilter from '@/components/BlogFilter.astro';
+import PostCard from '@/components/PostCard.astro';
+import { Icon } from 'astro-icon/components';
+
+const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()
+);
+---
+
+<BaseLayout title="随笔" description="感悟随笔：技术思考、学术随笔、工具折腾与生活记录">
+  <section class="py-12 sm:py-16">
+    <h1 class="flex items-center gap-2.5 text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl dark:text-zinc-100">
+      <Icon name="lucide:pen-line" class="h-7 w-7 text-zinc-400" />
+      感悟随笔
+    </h1>
+    <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+      {posts.length} 篇 · 技术思考 / 学术随笔 / 工具折腾 / 生活记录
+    </p>
+
+    <div class="mt-8">
+      <BlogFilter tags={BLOG_TAGS} />
+      <div class="grid gap-4">
+        {posts.map((post) => <PostCard post={post} />)}
+      </div>
+    </div>
+  </section>
+</BaseLayout>

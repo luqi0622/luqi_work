@@ -1,0 +1,59 @@
+{
+  "$ref": "#/definitions/projects",
+  "definitions": {
+    "projects": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "live",
+            "opensource",
+            "experimental",
+            "wip"
+          ]
+        },
+        "tech": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "url": {
+          "type": "string"
+        },
+        "repo": {
+          "type": "string"
+        },
+        "cover": {
+          "type": "string"
+        },
+        "featured": {
+          "type": "boolean",
+          "default": false
+        },
+        "order": {
+          "type": "number",
+          "default": 99
+        },
+        "$schema": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "status"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

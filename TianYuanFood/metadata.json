@@ -1,0 +1,8 @@
+{
+  "name": "田原食品有限公司",
+  "description": "田原食品有限公司官方网站，展示公司文化、优质调理加工产品及联系方式。",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

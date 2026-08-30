@@ -1,0 +1,24 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import ProjectCard from '@/components/ProjectCard.astro';
+import { Icon } from 'astro-icon/components';
+
+const projects = (await getCollection('projects')).sort((a, b) => a.data.order - b.data.order);
+---
+
+<BaseLayout title="项目" description="项目与工具展厅：小工具、在线网站与实验性项目">
+  <section class="py-12 sm:py-16">
+    <h1 class="flex items-center gap-2.5 text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl dark:text-zinc-100">
+      <Icon name="lucide:folder-git-2" class="h-7 w-7 text-zinc-400" />
+      项目与工具
+    </h1>
+    <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+      {projects.length} 个项目 · 小工具 / 在线网站 / 实验性尝试
+    </p>
+
+    <div class="mt-8 grid gap-5 sm:grid-cols-2">
+      {projects.map((project) => <ProjectCard project={project} />)}
+    </div>
+  </section>
+</BaseLayout>

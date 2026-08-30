@@ -1,0 +1,67 @@
+---
+/**
+ * 文章评论区（giscus · 基于 GitHub Discussions）
+ *
+ * 启用步骤：
+ * 1. 将本仓库推到 GitHub（需公开）
+ * 2. 仓库 Settings → General → Features 勾选 Discussions
+ * 3. 安装 giscus App：https://github.com/apps/giscus
+ * 4. 打开 https://giscus.app/zh-CN ，填入仓库名，选择映射方式（推荐 pathname）
+ *    和分类（推荐 Announcements），把生成的 repoId / categoryId 填进 src/config.ts
+ *
+ * 未配置时这里显示引导提示，不影响页面渲染。
+ */
+import { GISCUS } from '@/config';
+import { Icon } from 'astro-icon/components';
+
+const configured = Boolean(GISCUS.repo && GISCUS.repoId && GISCUS.categoryId);
+---
+
+<section class="mt-14 border-t border-zinc-200/70 pt-8 dark:border-zinc-800/70">
+  <h2 class="flex items-center gap-2 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+    <Icon name="lucide:message-circle" class="h-5 w-5 text-zinc-400" />
+    评论
+  </h2>
+
+  {
+    configured ? (
+      <div class="mt-6">
+        <script
+          is:inline
+          src="https://giscus.app/client.js"
+          data-repo={GISCUS.repo}
+          data-repo-id={GISCUS.repoId}
+          data-category={GISCUS.category}
+          data-category-id={GISCUS.categoryId}
+          data-mapping="pathname"
+          data-strict="0"
+          data-reactions-enabled="1"
+          data-emit-metadata="0"
+          data-input-position="top"
+          data-theme="preferred_color_scheme"
+          data-lang="zh-CN"
+          data-loading="lazy"
+          crossorigin="anonymous"
+          async
+        />
+      </div>
+    ) : (
+      <div class="mt-6 flex items-start gap-3 rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-4 text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
+        <Icon name="lucide:settings-2" class="mt-0.5 h-4 w-4 shrink-0" />
+        <p>
+          评论区尚未启用：基于 giscus（GitHub Discussions）。在
+          <a
+            href="https://giscus.app/zh-CN"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-indigo-600 underline underline-offset-2 dark:text-indigo-400"
+            >giscus.app</a
+          >
+          生成配置后填入 <code class="rounded bg-zinc-100 px-1 py-0.5 font-mono text-xs dark:bg-zinc-800">src/config.ts</code>
+          的 <code class="rounded bg-zinc-100 px-1 py-0.5 font-mono text-xs dark:bg-zinc-800">GISCUS</code>
+          字段即可开启访客评论。
+        </p>
+      </div>
+    )
+  }
+</section>

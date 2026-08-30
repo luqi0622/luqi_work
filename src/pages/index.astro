@@ -1,0 +1,89 @@
+---
+import { getCollection } from 'astro:content';
+import { SITE } from '@/config';
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import PostCard from '@/components/PostCard.astro';
+import ProjectCard from '@/components/ProjectCard.astro';
+import SocialLinks from '@/components/SocialLinks.astro';
+import { Icon } from 'astro-icon/components';
+
+const posts = (await getCollection('blog', ({ data }) => !data.draft))
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
+  .slice(0, 4);
+
+const projects = (await getCollection('projects'))
+  .filter((p) => p.data.featured)
+  .sort((a, b) => a.data.order - b.data.order)
+  .slice(0, 2);
+---
+
+<BaseLayout>
+  <!-- Hero -->
+  <section class="flex flex-col items-start gap-6 py-14 sm:py-20">
+    <div class="flex items-center gap-5">
+      <img
+        src="/avatar.svg"
+        alt={`${SITE.name} 的头像`}
+        width="88"
+        height="88"
+        class="h-[5.5rem] w-[5.5rem] rounded-2xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900"
+      />
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl dark:text-zinc-100">
+          {SITE.tagline}
+        </h1>
+        <p class="mt-1.5 text-zinc-500 dark:text-zinc-400">{SITE.taglineSub}</p>
+      </div>
+    </div>
+
+    <p class="max-w-2xl text-sm leading-relaxed text-zinc-500 sm:text-base dark:text-zinc-400">
+      你好，我是 {SITE.name}。目前的研究方向集中在光子计算与硅基光电子器件，
+      同时热衷于把工程思维用在日常——写自动化工具、搭网站、折腾各种提效的小玩意。
+      这里会记录我的技术思考、学术随笔、工具折腾和一些生活碎片。
+    </p>
+
+    <SocialLinks />
+  </section>
+
+  <!-- 最新随笔 -->
+  <section class="py-10">
+    <div class="mb-6 flex items-center justify-between">
+      <h2 class="flex items-center gap-2 text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+        <Icon name="lucide:pen-line" class="h-5 w-5 text-zinc-400" />
+        最新随笔
+      </h2>
+      <a
+        href="/blog"
+        class="flex items-center gap-1 text-sm text-zinc-400 transition-colors hover:text-indigo-600 dark:hover:text-indigo-400"
+      >
+        查看全部
+        <Icon name="lucide:arrow-right" class="h-4 w-4" />
+      </a>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2">
+      {posts.map((post) => <PostCard post={post} />)}
+    </div>
+  </section>
+
+  <!-- 精选项目 -->
+  <section class="py-10">
+    <div class="mb-6 flex items-center justify-between">
+      <h2 class="flex items-center gap-2 text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+        <Icon name="lucide:folder-git-2" class="h-5 w-5 text-zinc-400" />
+        精选项目
+      </h2>
+      <a
+        href="/projects"
+        class="flex items-center gap-1 text-sm text-zinc-400 transition-colors hover:text-indigo-600 dark:hover:text-indigo-400"
+      >
+        查看全部
+        <Icon name="lucide:arrow-right" class="h-4 w-4" />
+      </a>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2">
+      {projects.map((project) => <ProjectCard project={project} />)}
+    </div>
+  </section>
+</BaseLayout>
