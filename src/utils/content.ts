@@ -30,7 +30,7 @@ export function formatDateShort(date: Date): string {
 /** 项目状态标签映射 */
 export const PROJECT_STATUS: Record<string, { label: string; class: string }> = {
   live: { label: '已上线', class: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900' },
-  opensource: { label: '开源', class: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900' },
+  opensource: { label: '开源', class: 'bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-400 border-violet-200 dark:border-violet-900' },
   experimental: { label: '实验性', class: 'bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400 border-amber-200 dark:border-amber-900' },
   wip: { label: '开发中', class: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700' },
 };

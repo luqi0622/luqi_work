@@ -11,20 +11,53 @@ const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
 );
 ---
 
-<BaseLayout title="随笔" description="感悟随笔：技术思考、学术随笔、工具折腾与生活记录">
+<BaseLayout
+  title="随笔"
+  description="感悟随笔：从 2014 年写到现在的心情、亲情、书影、梦想与校园时光，欢迎留言聊聊"
+>
   <section class="py-12 sm:py-16">
-    <h1 class="flex items-center gap-2.5 text-2xl font-bold tracking-tight text-zinc-900 sm:text-3xl dark:text-zinc-100">
-      <Icon name="lucide:pen-line" class="h-7 w-7 text-zinc-400" />
+    <h1
+      class="flex items-center gap-2.5 font-display text-2xl tracking-tight text-zinc-900 sm:text-4xl dark:text-zinc-100"
+    >
+      <Icon name="lucide:sparkles" class="h-7 w-7 text-rose-400" />
       感悟随笔
     </h1>
     <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-      {posts.length} 篇 · 技术思考 / 学术随笔 / 工具折腾 / 生活记录
+      共 {posts.length} 条 · 从 2014 年的 QQ 空间一路写到现在 ✏️
     </p>
 
     <div class="mt-8">
       <BlogFilter tags={BLOG_TAGS} />
       <div class="grid gap-4">
         {posts.map((post) => <PostCard post={post} />)}
+      </div>
+    </div>
+
+    <!-- 新建随笔 / 评论说明 -->
+    <div
+      class="mt-10 grid gap-3 rounded-2xl border border-dashed border-rose-200 bg-rose-50/40 p-5 text-sm text-zinc-600 sm:grid-cols-2 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-zinc-300"
+    >
+      <div class="flex gap-3">
+        <span class="text-lg leading-none">📝</span>
+        <div>
+          <p class="font-medium text-zinc-800 dark:text-zinc-100">想写一条新随笔？</p>
+          <p class="mt-1 leading-relaxed">
+            在 <code class="rounded bg-white px-1 py-0.5 text-xs dark:bg-zinc-900">src/content/blog/</code>
+            下新建一个 <code class="rounded bg-white px-1 py-0.5 text-xs dark:bg-zinc-900">.md</code>
+            文件，写好 frontmatter（title / description / pubDate / tags）即可，构建时自动发布。
+          </p>
+        </div>
+      </div>
+      <div class="flex gap-3">
+        <span class="text-lg leading-none">💬</span>
+        <div>
+          <p class="font-medium text-zinc-800 dark:text-zinc-100">想留言给我？</p>
+          <p class="mt-1 leading-relaxed">
+            每篇随笔底部都有评论区，用 GitHub 账号即可发言。在 <code
+              class="rounded bg-white px-1 py-0.5 text-xs dark:bg-zinc-900">src/config.ts</code
+            > 里填好 giscus 配置后开启。
+          </p>
+        </div>
       </div>
     </div>
   </section>

@@ -52,7 +52,9 @@ const canonical = new URL(Astro.url.pathname, SITE.url).href;
       })();
     </script>
   </head>
-  <body class="min-h-screen bg-white font-sans text-zinc-700 antialiased transition-colors duration-200 dark:bg-zinc-950 dark:text-zinc-300">
+  <body
+    class="min-h-screen bg-gradient-to-b from-rose-50/50 via-white to-sky-50/30 font-sans text-zinc-700 antialiased transition-colors duration-200 dark:from-rose-950/20 dark:via-zinc-950 dark:to-violet-950/20 dark:text-zinc-300"
+  >
     <Header nav={NAV} siteName={SITE.name} />
     <main class="mx-auto w-full max-w-4xl px-4 sm:px-6">
       <slot />

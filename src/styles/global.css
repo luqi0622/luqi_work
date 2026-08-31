@@ -1,12 +1,18 @@
 @import 'tailwindcss';
+@import '@fontsource/zcool-kuaile';
+@import '@fontsource/noto-sans-sc/400.css';
+@import '@fontsource/noto-sans-sc/500.css';
+@import '@fontsource/noto-sans-sc/700.css';
 
 /* 暗色模式采用 class 策略（<html class="dark">），由 ThemeToggle 切换 */
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   --font-sans:
-    'Inter', ui-sans-serif, system-ui, -apple-system, 'PingFang SC',
-    'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+    'Noto Sans SC', ui-sans-serif, system-ui, -apple-system, 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  /* 展示字体：站酷快乐体，用于标题/品牌，青春俏皮 */
+  --font-display: 'ZCOOL KuaiLe', 'Noto Sans SC', ui-sans-serif, sans-serif;
   --font-mono:
     ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
 }
@@ -17,13 +23,61 @@ html {
 }
 
 ::selection {
-  background-color: theme(--color-indigo-200);
-  color: theme(--color-indigo-950);
+  background-color: theme(--color-rose-200);
+  color: theme(--color-rose-950);
 }
 
 .dark ::selection {
-  background-color: theme(--color-indigo-500);
+  background-color: theme(--color-rose-500);
   color: white;
+}
+
+/* ------------------------------------------------------------------ */
+/* 青春风点缀：渐变强调 / 筛选 chip 激活态 / 头像渐变描边                  */
+/* ------------------------------------------------------------------ */
+.text-gradient {
+  background-image: linear-gradient(
+    120deg,
+    theme(--color-rose-500),
+    theme(--color-fuchsia-500),
+    theme(--color-violet-500)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* 筛选 chip 激活态：糖果渐变 */
+.chip-active {
+  background-image: linear-gradient(
+    120deg,
+    theme(--color-rose-500),
+    theme(--color-fuchsia-500)
+  );
+  color: white !important;
+  border-color: transparent !important;
+  box-shadow: 0 4px 14px rgb(244 63 94 / 0.35);
+}
+
+/* Hero 里的漂浮装饰气泡 */
+@keyframes float-slow {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-14px) rotate(3deg);
+  }
+}
+
+.animate-float-slow {
+  animation: float-slow 6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float-slow {
+    animation: none;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -75,21 +129,21 @@ html {
 }
 
 .prose a {
-  color: theme(--color-indigo-600);
+  color: theme(--color-rose-600);
   text-decoration: underline;
   text-underline-offset: 3px;
-  text-decoration-color: theme(--color-indigo-300);
+  text-decoration-color: theme(--color-rose-300);
   transition: text-decoration-color 0.15s ease;
 }
 .dark .prose a {
-  color: theme(--color-indigo-400);
-  text-decoration-color: theme(--color-indigo-600);
+  color: theme(--color-violet-400);
+  text-decoration-color: theme(--color-rose-600);
 }
 .prose a:hover {
-  text-decoration-color: theme(--color-indigo-600);
+  text-decoration-color: theme(--color-rose-600);
 }
 .dark .prose a:hover {
-  text-decoration-color: theme(--color-indigo-400);
+  text-decoration-color: theme(--color-violet-400);
 }
 
 .prose strong {
@@ -118,7 +172,7 @@ html {
 }
 
 .prose li::marker {
-  color: theme(--color-indigo-400);
+  color: theme(--color-violet-400);
 }
 
 .prose blockquote {
@@ -303,10 +357,10 @@ html {
 }
 
 .toc-link.active {
-  color: theme(--color-indigo-600);
-  border-left-color: theme(--color-indigo-500);
+  color: theme(--color-rose-600);
+  border-left-color: theme(--color-rose-500);
 }
 
 .dark .toc-link.active {
-  color: theme(--color-indigo-400);
+  color: theme(--color-violet-400);
 }

@@ -5,6 +5,7 @@ import TOC from '@/components/TOC.astro';
 import Comments from '@/components/Comments.astro';
 import { Icon } from 'astro-icon/components';
 import { formatDate, readingTime } from '@/utils/content';
+import { tagStyle } from '@/utils/tags';
 import { SITE } from '@/config';
 
 export async function getStaticPaths() {
@@ -42,7 +43,7 @@ const minutes = readingTime(post.body ?? '');
       </div>
 
       <h1
-        class="mt-4 text-2xl font-bold leading-snug tracking-tight text-zinc-900 sm:text-3xl dark:text-zinc-100"
+        class="font-display mt-4 text-2xl leading-snug tracking-tight text-zinc-900 sm:text-3xl dark:text-zinc-100"
       >
         {post.data.title}
       </h1>
@@ -57,7 +58,10 @@ const minutes = readingTime(post.body ?? '');
             {post.data.tags.map((tag) => (
               <a
                 href="/blog"
-                class="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-0.5 text-xs text-zinc-500 transition-colors hover:border-indigo-300 hover:text-indigo-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-indigo-700 dark:hover:text-indigo-400"
+                class:list={[
+                  'rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors',
+                  tagStyle(tag),
+                ]}
               >
                 #{tag}
               </a>
@@ -91,13 +95,13 @@ const minutes = readingTime(post.body ?? '');
         prev ? (
           <a
             href={`/blog/${prev.id}/`}
-            class="group rounded-xl border border-zinc-200/70 p-4 transition-all hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-sm dark:border-zinc-800/70 dark:hover:border-indigo-700"
+            class="group rounded-xl border border-zinc-200/70 p-4 transition-all hover:-translate-y-0.5 hover:border-rose-300 hover:shadow-sm dark:border-zinc-800/70 dark:hover:border-rose-700"
           >
             <p class="flex items-center gap-1 text-xs text-zinc-400 dark:text-zinc-500">
               <Icon name="lucide:arrow-left" class="h-3.5 w-3.5" />
               上一篇
             </p>
-            <p class="mt-1.5 text-sm font-medium text-zinc-700 transition-colors group-hover:text-indigo-600 dark:text-zinc-300 dark:group-hover:text-indigo-400">
+            <p class="mt-1.5 text-sm font-medium text-zinc-700 transition-colors group-hover:text-rose-600 dark:text-zinc-300 dark:group-hover:text-rose-400">
               {prev.data.title}
             </p>
           </a>
@@ -109,13 +113,13 @@ const minutes = readingTime(post.body ?? '');
         next && (
           <a
             href={`/blog/${next.id}/`}
-            class="group rounded-xl border border-zinc-200/70 p-4 text-right transition-all hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-sm dark:border-zinc-800/70 dark:hover:border-indigo-700"
+            class="group rounded-xl border border-zinc-200/70 p-4 text-right transition-all hover:-translate-y-0.5 hover:border-rose-300 hover:shadow-sm dark:border-zinc-800/70 dark:hover:border-rose-700"
           >
             <p class="flex items-center justify-end gap-1 text-xs text-zinc-400 dark:text-zinc-500">
               下一篇
               <Icon name="lucide:arrow-right" class="h-3.5 w-3.5" />
             </p>
-            <p class="mt-1.5 text-sm font-medium text-zinc-700 transition-colors group-hover:text-indigo-600 dark:text-zinc-300 dark:group-hover:text-indigo-400">
+            <p class="mt-1.5 text-sm font-medium text-zinc-700 transition-colors group-hover:text-rose-600 dark:text-zinc-300 dark:group-hover:text-rose-400">
               {next.data.title}
             </p>
           </a>
