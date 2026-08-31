@@ -17,6 +17,14 @@ const year = new Date().getFullYear();
     <p>© {year} {siteName} · {domain}</p>
     <div class="flex items-center gap-4">
       <a
+        href="/tools"
+        class="flex items-center gap-1 transition-colors hover:text-rose-500"
+        title="写新随笔 / 调整分类"
+      >
+        <Icon name="lucide:wrench" class="h-4 w-4" />
+        <span>写作工具箱</span>
+      </a>
+      <a
         href="/rss.xml"
         class="flex items-center gap-1 transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
         title="RSS 订阅"

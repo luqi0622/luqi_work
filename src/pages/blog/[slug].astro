@@ -5,7 +5,7 @@ import TOC from '@/components/TOC.astro';
 import Comments from '@/components/Comments.astro';
 import { Icon } from 'astro-icon/components';
 import { formatDate, readingTime } from '@/utils/content';
-import { tagStyle } from '@/utils/tags';
+import { tagStyle, resolveTags } from '@/utils/tags';
 import { SITE } from '@/config';
 
 export async function getStaticPaths() {
@@ -25,6 +25,8 @@ export async function getStaticPaths() {
 const { post, prev, next } = Astro.props;
 const { Content, headings } = await render(post);
 const minutes = readingTime(post.body ?? '');
+// 分类：手动修正优先（见 src/data/tagOverrides.ts）
+const tags = resolveTags(post.id, post.data.tags);
 ---
 
 <BaseLayout title={post.data.title} description={post.data.description} ogType="article">
@@ -53,9 +55,9 @@ const minutes = readingTime(post.body ?? '');
       </p>
 
       {
-        post.data.tags.length > 0 && (
+        tags.length > 0 && (
           <div class="mt-4 flex flex-wrap gap-2">
-            {post.data.tags.map((tag) => (
+            {tags.map((tag) => (
               <a
                 href="/blog"
                 class:list={[

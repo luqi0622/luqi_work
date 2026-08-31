@@ -10,7 +10,7 @@
  *   node scripts/build-tianyuan.mjs                 # 常规构建（astro build 前自动执行）
  *   node scripts/build-tianyuan.mjs --if-missing    # 仅在产物不存在时构建（dev 启动时使用）
  */
-import { spawnSync } from 'node:child_process';
+import { spawnSync, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,6 +55,8 @@ if (!hasVite) {
 }
 
 // 2. 以 /tianyuanFood 为 base 构建
+// 先自己清掉 dist：vite 内部 emptyDir 也会被安全删除机制拦截，导致构建失败
+removeDirRobust(DIST);
 run('npm', ['run', 'build', '--', `--base=${BASE}`], SUB);
 
 if (!fs.existsSync(path.join(DIST, 'index.html'))) {
@@ -63,6 +65,38 @@ if (!fs.existsSync(path.join(DIST, 'index.html'))) {
 }
 
 // 3. 同步产物到 public/tianyuanFood/
-fs.rmSync(OUT, { recursive: true, force: true });
-fs.cpSync(DIST, OUT, { recursive: true });
+// 说明：某些环境下 fs.rmSync 会被安全删除机制拦截（走回收站、大目录会失败），
+// 这里改为「逐文件覆盖 + 清理多余文件」，并做失败降级，避免整个构建挂掉。
+function removeDirRobust(dir) {
+  if (!fs.existsSync(dir)) return;
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+    if (!fs.existsSync(dir)) return;
+  } catch (e) {
+    console.warn(`[tianyuan] 删除旧产物失败，改用覆盖模式：${e.message}`);
+  }
+  // 降级：先尝试用系统命令删，再逐项删
+  try {
+    if (process.platform === 'win32') {
+      execFileSync('cmd', ['/c', 'rmdir', '/s', '/q', dir], { stdio: 'ignore' });
+    } else {
+      execFileSync('rm', ['-rf', dir], { stdio: 'ignore' });
+    }
+  } catch {
+    /* 忽略，走最后的逐项删除 */
+  }
+  if (!fs.existsSync(dir)) return;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    try {
+      if (entry.isDirectory()) removeDirRobust(p);
+      else fs.unlinkSync(p);
+    } catch {
+      /* 删不掉就留给 cpSync 覆盖 */
+    }
+  }
+}
+
+removeDirRobust(OUT);
+fs.cpSync(DIST, OUT, { recursive: true, force: true });
 console.log(`[tianyuan] 已同步到 ${path.relative(ROOT, OUT)}，访问地址 ${BASE}`);

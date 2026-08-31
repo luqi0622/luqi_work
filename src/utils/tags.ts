@@ -1,3 +1,5 @@
+import { TAG_OVERRIDES } from '@/data/tagOverrides';
+
 /**
  * 随笔分类标签的配色方案 —— 青春糖果色系
  * 每个分类一种颜色，用于 PostCard / 文章页 / 筛选栏的 tag chips
@@ -22,4 +24,14 @@ const FALLBACK =
 
 export function tagStyle(tag: string): string {
   return TAG_STYLES[tag] ?? FALLBACK;
+}
+
+/**
+ * 取得文章最终分类：优先用 src/data/tagOverrides.ts 里的手动修正，
+ * 没有手动修正时用 md frontmatter 里的自动分类。
+ */
+export function resolveTags(postId: string, frontmatterTags: string[]): string[] {
+  const override = TAG_OVERRIDES[postId];
+  if (override && override.length > 0) return override;
+  return frontmatterTags ?? [];
 }

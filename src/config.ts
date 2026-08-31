@@ -46,7 +46,7 @@ export const BLOG_TAGS = ['心情随笔', '亲情爱情', '读书观影', '梦�
 
 /**
  * 首页 Hero 右侧的动漫半身像
- * 把你的图片命名为 hero-anime.png（或 jpg）放到 public/images/ 下，
- * 然后把下面的路径改成 '/images/hero-anime.png' 即可。
+ * 图片放在 public/images/ 下，把路径写这里即可（jpg / png / webp / svg 都行）
+ * 当前使用：public/images/hero-anime.jpg
  */
-export const HERO_IMAGE = '/images/hero-anime.svg';
+export const HERO_IMAGE = '/images/hero-anime.jpg';

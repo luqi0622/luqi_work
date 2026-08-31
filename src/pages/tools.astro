@@ -1,0 +1,423 @@
+---
+/**
+ * 写作工具箱（纯前端，不需要服务器）
+ * 1. 新建随笔：填表单 → 生成 Markdown 文件下载 → 丢进 src/content/blog/ 即可
+ * 2. 分类管理：223 条说说一览，下拉改分类 → 导出 tagOverrides.ts 覆盖配置
+ */
+import { getCollection } from 'astro:content';
+import { BLOG_TAGS } from '@/config';
+import { resolveTags } from '@/utils/tags';
+import { TAG_OVERRIDES } from '@/data/tagOverrides';
+import { formatDateShort } from '@/utils/content';
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import { Icon } from 'astro-icon/components';
+
+const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()
+);
+
+const list = posts.map((p) => ({
+  id: p.id,
+  title: p.data.title,
+  date: formatDateShort(p.data.pubDate),
+  desc: p.data.description.slice(0, 40),
+  tag: resolveTags(p.id, p.data.tags)[0] ?? '',
+  rawTag: (p.data.tags ?? [])[0] ?? '',
+}));
+---
+
+<BaseLayout title="写作工具箱" description="新建随笔、批量调整随笔分类">
+  <section class="py-10 sm:py-14">
+    <header>
+      <h1
+        class="flex items-center gap-2.5 font-display text-2xl tracking-tight text-zinc-900 sm:text-3xl dark:text-zinc-100"
+      >
+        <Icon name="lucide:wrench" class="h-7 w-7 text-rose-400" />
+        写作工具箱
+      </h1>
+      <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+        纯浏览器的小工具，改完把文件放进项目、推送到 GitHub 后生效。
+      </p>
+    </header>
+
+    <!-- ============ 一、新建随笔 ============ -->
+    <div
+      class="mt-8 rounded-2xl border border-zinc-200/70 bg-white p-5 sm:p-6 dark:border-zinc-800/70 dark:bg-zinc-900"
+    >
+      <h2 class="flex items-center gap-2 font-display text-lg text-zinc-900 dark:text-zinc-100">
+        <span class="text-lg">✍️</span> 新建一条随笔
+      </h2>
+      <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+        填好之后点「下载 .md 文件」，把它丢进 <code
+          class="rounded bg-zinc-100 px-1 py-0.5 text-[11px] dark:bg-zinc-800">src/content/blog/</code
+        > 就发布成功啦。
+      </p>
+
+      <div class="mt-5 grid gap-4 sm:grid-cols-2">
+        <div class="sm:col-span-2">
+          <label for="np-title" class="block text-xs font-medium text-zinc-600 dark:text-zinc-300">
+            标题（留空则自动取正文前 16 个字）
+          </label>
+          <input
+            id="np-title"
+            type="text"
+            placeholder="例如：今天的日落很好看"
+            class="mt-1.5 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm transition-colors focus:border-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-rose-600"
+          />
+        </div>
+
+        <div>
+          <label for="np-date" class="block text-xs font-medium text-zinc-600 dark:text-zinc-300">
+            日期
+          </label>
+          <input
+            id="np-date"
+            type="date"
+            class="mt-1.5 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-rose-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+          />
+        </div>
+
+        <div>
+          <label for="np-time" class="block text-xs font-medium text-zinc-600 dark:text-zinc-300">
+            时间
+          </label>
+          <input
+            id="np-time"
+            type="time"
+            class="mt-1.5 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-rose-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+          />
+        </div>
+
+        <div>
+          <label for="np-tag" class="block text-xs font-medium text-zinc-600 dark:text-zinc-300">
+            分类
+          </label>
+          <select
+            id="np-tag"
+            class="mt-1.5 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm focus:border-rose-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+          >
+            {BLOG_TAGS.map((t) => <option value={t}>{t}</option>)}
+          </select>
+        </div>
+
+        <div class="sm:col-span-2">
+          <label for="np-body" class="block text-xs font-medium text-zinc-600 dark:text-zinc-300">
+            正文（支持 Markdown）
+          </label>
+          <textarea
+            id="np-body"
+            rows="6"
+            placeholder="想说点什么…"
+            class="mt-1.5 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm leading-relaxed focus:border-rose-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+          ></textarea>
+        </div>
+      </div>
+
+      <div class="mt-4 flex flex-wrap gap-2">
+        <button
+          id="np-preview-btn"
+          type="button"
+          class="rounded-full border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:border-rose-300 hover:text-rose-600 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-rose-600 dark:hover:text-rose-400"
+        >
+          预览 Markdown
+        </button>
+        <button
+          id="np-download"
+          type="button"
+          class="rounded-full bg-gradient-to-r from-rose-500 to-fuchsia-500 px-4 py-2 text-sm font-medium text-white shadow-md shadow-rose-500/30 transition-transform hover:scale-[1.03]"
+        >
+          下载 .md 文件
+        </button>
+        <button
+          id="np-copy"
+          type="button"
+          class="rounded-full border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:border-rose-300 hover:text-rose-600 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-rose-600 dark:hover:text-rose-400"
+        >
+          复制内容
+        </button>
+      </div>
+
+      <pre
+        id="np-output"
+        class="mt-4 hidden max-h-72 overflow-auto rounded-xl bg-zinc-50 p-4 text-xs leading-relaxed text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300"><code></code></pre>
+    </div>
+
+    <!-- ============ 二、分类管理 ============ -->
+    <div
+      class="mt-6 rounded-2xl border border-zinc-200/70 bg-white p-5 sm:p-6 dark:border-zinc-800/70 dark:bg-zinc-900"
+    >
+      <h2 class="flex items-center gap-2 font-display text-lg text-zinc-900 dark:text-zinc-100">
+        <span class="text-lg">🏷️</span> 调整随笔分类
+      </h2>
+      <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+        导入时的分类是关键词猜的，肯定有不对的。这里可以逐条改，改完导出配置文件覆盖 <code
+          class="rounded bg-zinc-100 px-1 py-0.5 text-[11px] dark:bg-zinc-800"
+          >src/data/tagOverrides.ts</code
+        > 即可。
+      </p>
+
+      <div class="mt-4 flex flex-wrap items-center gap-3">
+        <input
+          id="tag-search"
+          type="search"
+          placeholder="搜索标题关键词，比如「奶奶」「考研」"
+          class="min-w-0 flex-1 rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm focus:border-rose-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+        />
+        <span id="changed-count" class="text-xs text-zinc-400 dark:text-zinc-500">
+          共 {list.length} 条
+        </span>
+      </div>
+
+      <div class="mt-4 max-h-[28rem] overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+        <table class="w-full text-left text-sm">
+          <thead
+            class="sticky top-0 bg-zinc-50 text-xs text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400"
+          >
+            <tr>
+              <th class="px-3 py-2 font-medium">日期</th>
+              <th class="px-3 py-2 font-medium">标题</th>
+              <th class="w-40 px-3 py-2 font-medium">分类</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
+            {
+              list.map((p) => (
+                <tr
+                  class="hover:bg-rose-50/40 dark:hover:bg-rose-950/20"
+                  data-id={p.id}
+                  data-title={p.title.toLowerCase()}
+                  data-desc={p.desc.toLowerCase()}
+                >
+                  <td class="whitespace-nowrap px-3 py-2 text-xs text-zinc-400 dark:text-zinc-500">
+                    {p.date}
+                  </td>
+                  <td class="px-3 py-2">
+                    <a
+                      href={`/blog/${p.id}/`}
+                      target="_blank"
+                      class="text-zinc-700 hover:text-rose-600 dark:text-zinc-300 dark:hover:text-rose-400"
+                      title={p.desc}
+                    >
+                      {p.title}
+                    </a>
+                  </td>
+                  <td class="px-3 py-2">
+                    <select
+                      class="tag-select w-full rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs focus:border-rose-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                      data-id={p.id}
+                      data-original={p.tag}
+                    >
+                      {BLOG_TAGS.map((t) => (
+                        <option value={t} selected={t === p.tag}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <div class="mt-4 flex flex-wrap gap-2">
+        <button
+          id="ov-preview"
+          type="button"
+          class="rounded-full border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:border-rose-300 hover:text-rose-600 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-rose-600 dark:hover:text-rose-400"
+        >
+          预览配置文件
+        </button>
+        <button
+          id="ov-download"
+          type="button"
+          class="rounded-full bg-gradient-to-r from-rose-500 to-fuchsia-500 px-4 py-2 text-sm font-medium text-white shadow-md shadow-rose-500/30 transition-transform hover:scale-[1.03]"
+        >
+          下载 tagOverrides.ts
+        </button>
+        <button
+          id="ov-copy"
+          type="button"
+          class="rounded-full border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-600 transition-colors hover:border-rose-300 hover:text-rose-600 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-rose-600 dark:hover:text-rose-400"
+        >
+          复制配置
+        </button>
+      </div>
+
+      <pre
+        id="ov-output"
+        class="mt-4 hidden max-h-72 overflow-auto rounded-xl bg-zinc-50 p-4 text-xs leading-relaxed text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300"><code></code></pre>
+
+      <p class="mt-4 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+        下载的 <code class="rounded bg-zinc-100 px-1 py-0.5 dark:bg-zinc-800">tagOverrides.ts</code>
+        覆盖掉 <code class="rounded bg-zinc-100 px-1 py-0.5 dark:bg-zinc-800">src/data/tagOverrides.ts</code>，
+        重新构建部署后，随笔的筛选和标签颜色就会按新分类走。
+      </p>
+    </div>
+  </section>
+</BaseLayout>
+
+<script define:vars={{ existingOverrides: TAG_OVERRIDES, allTags: BLOG_TAGS }}>
+  // ---------------- 通用：下载 / 复制 ----------------
+  function download(filename, content) {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function copy(text, btn, okText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      const old = btn.textContent;
+      btn.textContent = okText;
+      setTimeout(() => (btn.textContent = old), 1600);
+    } catch {
+      alert('复制失败，请手动选中预览内容复制');
+    }
+  }
+
+  // ---------------- 一、新建随笔 ----------------
+  const npTitle = document.querySelector('#np-title');
+  const npDate = document.querySelector('#np-date');
+  const npTime = document.querySelector('#np-time');
+  const npTag = document.querySelector('#np-tag');
+  const npBody = document.querySelector('#np-body');
+  const npOutput = document.querySelector('#np-output');
+  const npCode = npOutput?.querySelector('code');
+
+  // 默认时间：此刻
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  if (npDate) npDate.value = today;
+  if (npTime) npTime.value = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+  function esc(s) {
+    return s.replace(/"/g, '\\"');
+  }
+
+  function buildPost() {
+    const body = (npBody?.value ?? '').trim();
+    const firstLine = body.split('\n').find((l) => l.trim()) ?? '';
+    const title = (npTitle?.value ?? '').trim() || firstLine.slice(0, 16) || '无题';
+    const desc = body.replace(/\s+/g, ' ').slice(0, 60) || title;
+    const date = npDate?.value || today;
+    const time = npTime?.value || '00:00';
+    const tag = npTag?.value || allTags[0];
+
+    const yaml = `---
+title: "${esc(title)}"
+description: "${esc(desc)}"
+pubDate: ${date}T${time}:00
+tags:
+  - ${tag}
+---`;
+
+    const fileTime = `${date}-${time.replace(':', '')}`;
+    const slug = `notes-${fileTime.replace(/-/g, '')}`;
+    return { content: `${yaml}\n\n${body}\n`, filename: `${slug}.md` };
+  }
+
+  function renderPreview() {
+    const { content } = buildPost();
+    if (npCode) npCode.textContent = content;
+    npOutput?.classList.remove('hidden');
+  }
+
+  document.querySelector('#np-preview-btn')?.addEventListener('click', renderPreview);
+  document.querySelector('#np-download')?.addEventListener('click', () => {
+    const { content, filename } = buildPost();
+    if (!(npBody?.value ?? '').trim()) {
+      alert('正文还是空的呀，写点什么吧～');
+      return;
+    }
+    download(filename, content);
+  });
+  document.querySelector('#np-copy')?.addEventListener('click', (e) => {
+    const { content } = buildPost();
+    renderPreview();
+    copy(content, e.currentTarget, '已复制 ✓');
+  });
+
+  // ---------------- 二、分类管理 ----------------
+  // 已存在的手动修正先读进来，避免没动过的条目被清掉
+  const changes = new Map();
+  for (const [id, tags] of Object.entries(existingOverrides ?? {})) {
+    if (tags && tags[0]) changes.set(id, tags[0]);
+  }
+
+  const selects = Array.from(document.querySelectorAll('.tag-select'));
+  const counter = document.querySelector('#changed-count');
+  const ovOutput = document.querySelector('#ov-output');
+  const ovCode = ovOutput?.querySelector('code');
+
+  function refreshCount() {
+    const total = document.querySelectorAll('tbody tr').length;
+    if (counter) counter.textContent = `共 ${total} 条 · 已修改 ${changes.size} 条`;
+  }
+
+  for (const sel of selects) {
+    const id = sel.dataset.id;
+    if (changes.has(id)) sel.value = changes.get(id);
+    sel.addEventListener('change', () => {
+      const original = sel.dataset.original ?? '';
+      if (sel.value === original) changes.delete(id);
+      else changes.set(id, sel.value);
+      refreshCount();
+    });
+  }
+  refreshCount();
+
+  function buildOverrides() {
+    const lines = Array.from(changes.entries())
+      .map(([id, tag]) => `  '${id}': ['${tag}'],`)
+      .join('\n');
+    return `/**
+ * 随笔分类手动修正表（由「写作工具箱」页面导出）
+ * 想改某一条的分类，直接改这里对应的那一行即可。
+ */
+export const TAG_OVERRIDES: Record<string, string[]> = {
+${lines}
+};
+`;
+  }
+
+  function renderOv() {
+    if (ovCode) ovCode.textContent = buildOverrides();
+    ovOutput?.classList.remove('hidden');
+  }
+
+  document.querySelector('#ov-preview')?.addEventListener('click', renderOv);
+  document.querySelector('#ov-download')?.addEventListener('click', () => {
+    if (changes.size === 0) {
+      alert('还没有改动任何一条的分类～');
+      return;
+    }
+    download('tagOverrides.ts', buildOverrides());
+  });
+  document.querySelector('#ov-copy')?.addEventListener('click', (e) => {
+    if (changes.size === 0) {
+      alert('还没有改动任何一条的分类～');
+      return;
+    }
+    renderOv();
+    copy(buildOverrides(), e.currentTarget, '已复制 ✓');
+  });
+
+  // 搜索过滤
+  const search = document.querySelector('#tag-search');
+  search?.addEventListener('input', () => {
+    const kw = search.value.trim().toLowerCase();
+    for (const row of document.querySelectorAll('tbody tr')) {
+      const text = `${row.dataset.title ?? ''} ${row.dataset.desc ?? ''}`;
+      row.classList.toggle('hidden', kw !== '' && !text.includes(kw));
+    }
+  });
+</script>
