@@ -1,14 +1,8 @@
 ---
-import { getCollection } from 'astro:content';
-import { BLOG_TAGS } from '@/config';
 import BaseLayout from '@/layouts/BaseLayout.astro';
-import BlogFilter from '@/components/BlogFilter.astro';
-import PostCard from '@/components/PostCard.astro';
-import { Icon } from 'astro-icon/components';
 
-const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
-  (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()
-);
+const SHUOSHUO_SRC = 'https://qzone-shuoshuo.vercel.app/shuoshuo?embed=1';
+const FRAME_ORIGIN = 'https://qzone-shuoshuo.vercel.app';
 ---
 
 <BaseLayout
@@ -19,46 +13,45 @@ const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
     <h1
       class="flex items-center gap-2.5 font-display text-2xl tracking-tight text-zinc-900 sm:text-4xl dark:text-zinc-100"
     >
-      <Icon name="lucide:sparkles" class="h-7 w-7 text-rose-400" />
+      <span class="text-lg leading-none">✏️</span>
       感悟随笔
     </h1>
     <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-      共 {posts.length} 条 · 从 2014 年的 QQ 空间一路写到现在 ✏️
+      从 2014 年的 QQ 空间一路写到现在 · 可直接在下方写新随笔、给每条留言
     </p>
 
     <div class="mt-8">
-      <BlogFilter tags={BLOG_TAGS} />
-      <div class="grid gap-4">
-        {posts.map((post) => <PostCard post={post} />)}
-      </div>
+      <iframe
+        id="shuoshuo-frame"
+        src={SHUOSHUO_SRC}
+        title="QQ 空间说说"
+        loading="lazy"
+        class="w-full border-0"
+        style="min-height: 80vh;"></iframe>
     </div>
 
-    <!-- 新建随笔 / 评论说明 -->
-    <div
-      class="mt-10 grid gap-3 rounded-2xl border border-dashed border-rose-200 bg-rose-50/40 p-5 text-sm text-zinc-600 sm:grid-cols-2 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-zinc-300"
-    >
-      <div class="flex gap-3">
-        <span class="text-lg leading-none">📝</span>
-        <div>
-          <p class="font-medium text-zinc-800 dark:text-zinc-100">想写一条新随笔？</p>
-          <p class="mt-1 leading-relaxed">
-            在 <code class="rounded bg-white px-1 py-0.5 text-xs dark:bg-zinc-900">src/content/blog/</code>
-            下新建一个 <code class="rounded bg-white px-1 py-0.5 text-xs dark:bg-zinc-900">.md</code>
-            文件，写好 frontmatter（title / description / pubDate / tags）即可，构建时自动发布。
-          </p>
-        </div>
-      </div>
-      <div class="flex gap-3">
-        <span class="text-lg leading-none">💬</span>
-        <div>
-          <p class="font-medium text-zinc-800 dark:text-zinc-100">想留言给我？</p>
-          <p class="mt-1 leading-relaxed">
-            每篇随笔底部都有评论区，用 GitHub 账号即可发言。在 <code
-              class="rounded bg-white px-1 py-0.5 text-xs dark:bg-zinc-900">src/config.ts</code
-            > 里填好 giscus 配置后开启。
-          </p>
-        </div>
-      </div>
-    </div>
+    <p class="mt-4 text-center text-xs text-zinc-400 dark:text-zinc-600">
+      我是主人？<a
+        href="https://qzone-shuoshuo.vercel.app/admin"
+        target="_blank"
+        rel="noopener"
+        class="underline transition-colors hover:text-zinc-600 dark:hover:text-zinc-400"
+        >点此登录后台</a
+      > 后即可在此写新随笔 / 删评论。
+    </p>
   </section>
 </BaseLayout>
+
+<script>
+  const frame = document.getElementById('shuoshuo-frame') as HTMLIFrameElement | null;
+  const FRAME_ORIGIN = 'https://qzone-shuoshuo.vercel.app';
+  if (frame) {
+    window.addEventListener('message', (e: MessageEvent) => {
+      if (e.origin !== FRAME_ORIGIN) return;
+      const h = e.data && (e.data.__qzShuoshuoHeight as number | undefined);
+      if (typeof h === 'number' && h > 0) {
+        frame.style.height = h + 'px';
+      }
+    });
+  }
+</script>
