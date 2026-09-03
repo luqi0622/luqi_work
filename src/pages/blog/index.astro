@@ -1,18 +1,23 @@
 ---
+export const prerender = false;
 import BaseLayout from '@/layouts/BaseLayout.astro';
+import ShuoPost from '@/components/shuoshuo/ShuoPost.astro';
+import ShuoCompose from '@/components/shuoshuo/ShuoCompose.astro';
+import ShuoTags from '@/components/shuoshuo/ShuoTags.astro';
+import { listPosts, listTags, getPostTagsMap } from '@/lib/queries';
+import { checkAuth } from '@/lib/auth';
 
-const SHUOSHUO_SRC = 'https://qzone-shuoshuo.vercel.app/shuoshuo?embed=1';
-const FRAME_ORIGIN = 'https://qzone-shuoshuo.vercel.app';
+const tag = Astro.url.searchParams.get('tag') ?? undefined;
+const [posts, tags, tagMap] = await Promise.all([listPosts({ tag }), listTags(), getPostTagsMap()]);
+const totalComments = posts.reduce((s, p) => s + p.comments.length, 0);
+const isAuthed = checkAuth(Astro.cookies.get('session')?.value, import.meta.env.SESSION_SECRET);
 ---
-
 <BaseLayout
-  title="随笔"
+  title="感悟随笔"
   description="感悟随笔：从 2014 年写到现在的心情、亲情、书影、梦想与校园时光，欢迎留言聊聊"
 >
   <section class="py-12 sm:py-16">
-    <h1
-      class="flex items-center gap-2.5 font-display text-2xl tracking-tight text-zinc-900 sm:text-4xl dark:text-zinc-100"
-    >
+    <h1 class="flex items-center gap-2.5 font-display text-2xl tracking-tight text-zinc-900 sm:text-4xl dark:text-zinc-100">
       <span class="text-lg leading-none">✏️</span>
       感悟随笔
     </h1>
@@ -20,38 +25,282 @@ const FRAME_ORIGIN = 'https://qzone-shuoshuo.vercel.app';
       从 2014 年的 QQ 空间一路写到现在 · 可直接在下方写新随笔、给每条留言
     </p>
 
+    {
+      isAuthed && (
+        <div class="mt-8">
+          <ShuoCompose />
+        </div>
+      )
+    }
+
     <div class="mt-8">
-      <iframe
-        id="shuoshuo-frame"
-        src={SHUOSHUO_SRC}
-        title="QQ 空间说说"
-        loading="lazy"
-        class="w-full border-0"
-        style="min-height: 80vh;"></iframe>
+      <ShuoTags tags={tags} current={tag} />
     </div>
 
-    <p class="mt-4 text-center text-xs text-zinc-400 dark:text-zinc-600">
-      我是主人？<a
-        href="https://qzone-shuoshuo.vercel.app/admin"
-        target="_blank"
-        rel="noopener"
-        class="underline transition-colors hover:text-zinc-600 dark:hover:text-zinc-400"
-        >点此登录后台</a
-      > 后即可在此写新随笔 / 删评论。
-    </p>
+    <div class="mt-10 border-l border-zinc-200 dark:border-zinc-800">
+      {posts.map((p) => <ShuoPost post={p} tags={tagMap.get(p.id) ?? []} isAuthed={isAuthed} />)}
+    </div>
+
+    {
+      posts.length === 0 && (
+        <p class="py-20 text-center text-sm text-zinc-400 dark:text-zinc-600">暂无说说</p>
+      )
+    }
   </section>
 </BaseLayout>
 
-<script>
-  const frame = document.getElementById('shuoshuo-frame') as HTMLIFrameElement | null;
-  const FRAME_ORIGIN = 'https://qzone-shuoshuo.vercel.app';
-  if (frame) {
-    window.addEventListener('message', (e: MessageEvent) => {
-      if (e.origin !== FRAME_ORIGIN) return;
-      const h = e.data && (e.data.__qzShuoshuoHeight as number | undefined);
-      if (typeof h === 'number' && h > 0) {
-        frame.style.height = h + 'px';
+<!-- 标签配置弹窗（博主） -->
+<div id="tag-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div class="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+    <h3 class="font-medium text-zinc-800 dark:text-zinc-100">配置标签</h3>
+    <div id="tag-modal-list" class="mt-3 flex max-h-60 flex-wrap content-start gap-2 overflow-y-auto"></div>
+    <input
+      id="tag-modal-new"
+      type="text"
+      placeholder="输入新标签后回车"
+      class="mt-3 w-full rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-zinc-400 dark:border-zinc-800 dark:placeholder:text-zinc-600"
+    />
+    <div class="mt-4 flex justify-end gap-2">
+      <button id="tag-modal-cancel" type="button" class="rounded-lg px-3 py-1.5 text-sm text-zinc-500 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800">取消</button>
+      <button id="tag-modal-save" type="button" class="rounded-lg bg-gradient-to-r from-rose-500 to-fuchsia-500 px-4 py-1.5 text-sm font-medium text-white transition hover:opacity-90">保存</button>
+    </div>
+  </div>
+</div>
+
+<script is:inline define:vars={{ allTags: tags.map((t) => ({ id: t.id, name: t.name })) }}>
+  const CSRF = { 'x-requested-with': 'fetch', 'content-type': 'application/json' };
+  window.__SHUO_TAGS__ = allTags;
+  const modal = document.getElementById('tag-modal');
+  const modalList = document.getElementById('tag-modal-list');
+  const modalNew = document.getElementById('tag-modal-new');
+  let modalPostId = null;
+  let modalSelected = [];
+
+  function closeMenu(el) {
+    const m = el && el.closest && el.closest('details.shuo-menu');
+    if (m) m.open = false;
+  }
+
+  // —— 发布新随笔（博主）——
+  const composeForm = document.getElementById('compose-form');
+  if (composeForm) {
+    composeForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const ta = composeForm.querySelector('#compose-content');
+      const msg = composeForm.querySelector('#compose-msg');
+      const btn = composeForm.querySelector('button[type=submit]');
+      const content = ta.value.trim();
+      if (!content) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/admin/posts', { method: 'POST', headers: CSRF, body: JSON.stringify({ content }) });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) { location.reload(); return; }
+        msg.textContent = data.error || '发布失败';
+      } catch { msg.textContent = '网络错误'; }
+      btn.disabled = false;
+    });
+  }
+
+  // —— 评论 / 回复 提交（事件委托）——
+  document.addEventListener('submit', async (e) => {
+    const form = e.target.closest && e.target.closest('form[data-endpoint]');
+    if (!form) return;
+    e.preventDefault();
+    const endpoint = form.dataset.endpoint;
+    const postId = Number(form.dataset.postId);
+    const parentId = form.dataset.parentId ? Number(form.dataset.parentId) : null;
+    const replyTo = form.dataset.replyTo || null;
+    const auth = form.dataset.auth;
+    const contentEl = form.querySelector('.comment-content, .reply-content');
+    const content = contentEl ? contentEl.value.trim() : '';
+    const nameEl = form.querySelector('.comment-name, .reply-name');
+    const name = nameEl ? nameEl.value.trim() : '';
+    const hp = form.querySelector('.hp') ? form.querySelector('.hp').value : '';
+    const msg = form.querySelector('.comment-msg, .reply-msg');
+    if (auth === 'guest' && !name) { if (msg) msg.textContent = '请填写昵称'; return; }
+    if (!content) { if (msg) msg.textContent = '评论不能为空'; return; }
+    const btn = form.querySelector('button[type=submit]');
+    if (btn) btn.disabled = true;
+    const body = auth === 'guest'
+      ? { name, content, hp, parentId, replyTo }
+      : { postId, content, parentId, replyTo };
+    try {
+      const res = await fetch(endpoint, { method: 'POST', headers: CSRF, body: JSON.stringify(body) });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) { location.reload(); return; }
+      if (msg) msg.textContent = data.error || '提交失败';
+    } catch { if (msg) msg.textContent = '网络错误'; }
+    if (btn) btn.disabled = false;
+  });
+
+  // —— 回复框 展开 / 收起 ——
+  document.addEventListener('click', (e) => {
+    const toggle = e.target.closest && e.target.closest('.reply-toggle');
+    if (toggle) {
+      const li = toggle.closest('li');
+      const f = li && li.querySelector('.reply-form');
+      if (f) f.classList.toggle('hidden');
+      return;
+    }
+    const cancel = e.target.closest && e.target.closest('.reply-cancel');
+    if (cancel) {
+      const f = cancel.closest('.reply-form');
+      if (f) f.classList.add('hidden');
+      return;
+    }
+  });
+
+  // —— 删除评论（博主）——
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest && e.target.closest('button.comment-delete');
+    if (!btn) return;
+    e.preventDefault();
+    if (!confirm('确定删除这条评论及其全部回复？')) return;
+    const postId = Number(btn.dataset.postId);
+    const commentId = Number(btn.dataset.commentId);
+    try {
+      const res = await fetch('/api/admin/comments', {
+        method: 'DELETE',
+        headers: CSRF,
+        body: JSON.stringify({ postId, commentId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) { location.reload(); }
+      else alert(data.error || '删除失败');
+    } catch { alert('网络错误'); }
+  });
+
+  // —— 三条点菜单：编辑 / 置顶 / 标签 / 删除 ——
+  document.addEventListener('click', async (e) => {
+    // 编辑
+    const editBtn = e.target.closest && e.target.closest('button.edit-toggle');
+    if (editBtn) {
+      const card = editBtn.closest('article');
+      card.querySelector('.post-content')?.classList.add('hidden');
+      card.querySelector('.edit-form')?.classList.remove('hidden');
+      closeMenu(editBtn);
+      return;
+    }
+    const editCancel = e.target.closest && e.target.closest('button.edit-cancel');
+    if (editCancel) {
+      const card = editCancel.closest('article');
+      card.querySelector('.edit-form')?.classList.add('hidden');
+      card.querySelector('.post-content')?.classList.remove('hidden');
+      return;
+    }
+    const editSave = e.target.closest && e.target.closest('button.edit-save');
+    if (editSave) {
+      const card = editSave.closest('article');
+      const postId = Number(editSave.dataset.postId);
+      const ta = card.querySelector('.edit-content');
+      const content = ta.value.trim();
+      const msg = card.querySelector('.edit-msg');
+      if (!content) { msg.textContent = '内容不能为空'; return; }
+      editSave.disabled = true;
+      try {
+        const res = await fetch(`/api/admin/posts/${postId}`, { method: 'PATCH', headers: CSRF, body: JSON.stringify({ content }) });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) { location.reload(); return; }
+        msg.textContent = data.error || '保存失败';
+      } catch { msg.textContent = '网络错误'; }
+      editSave.disabled = false;
+      return;
+    }
+    // 置顶
+    const pinBtn = e.target.closest && e.target.closest('button.pin-toggle');
+    if (pinBtn) {
+      const postId = Number(pinBtn.dataset.postId);
+      const pinned = pinBtn.dataset.pinned === '1' ? 0 : 1;
+      closeMenu(pinBtn);
+      try {
+        const res = await fetch(`/api/admin/posts/${postId}`, { method: 'PATCH', headers: CSRF, body: JSON.stringify({ pinned }) });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) { location.reload(); }
+        else alert(data.error || '操作失败');
+      } catch { alert('网络错误'); }
+      return;
+    }
+    // 删除
+    const delBtn = e.target.closest && e.target.closest('button.delete-toggle');
+    if (delBtn) {
+      const postId = Number(delBtn.dataset.postId);
+      closeMenu(delBtn);
+      if (!confirm('确定删除这条随笔？')) return;
+      try {
+        const res = await fetch(`/api/admin/posts/${postId}`, { method: 'DELETE', headers: CSRF });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) { location.reload(); }
+        else alert(data.error || '删除失败');
+      } catch { alert('网络错误'); }
+      return;
+    }
+    // 标签
+    const tagBtn = e.target.closest && e.target.closest('button.tag-toggle');
+    if (tagBtn) {
+      modalPostId = Number(tagBtn.dataset.postId);
+      modalSelected = (tagBtn.dataset.currentTags || '').split(',').filter(Boolean);
+      renderTagModal();
+      modal.classList.remove('hidden');
+      closeMenu(tagBtn);
+      return;
+    }
+  });
+
+  function renderTagModal() {
+    if (!modalList) return;
+    modalList.innerHTML = '';
+    const all = window.__SHUO_TAGS__ || [];
+    if (all.length === 0) {
+      modalList.innerHTML = '<p class="text-xs text-zinc-400">还没有标签，用下方输入框新建一个吧。</p>';
+    }
+    for (const t of all) {
+      const checked = modalSelected.includes(t.name);
+      const label = document.createElement('label');
+      label.className = 'inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors ' +
+        (checked
+          ? 'border-rose-400 bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400'
+          : 'border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = t.name;
+      cb.checked = checked;
+      cb.className = 'accent-rose-500';
+      cb.addEventListener('change', () => {
+        if (cb.checked) { if (!modalSelected.includes(t.name)) modalSelected.push(t.name); }
+        else { modalSelected = modalSelected.filter((n) => n !== t.name); }
+        renderTagModal();
+      });
+      const span = document.createElement('span');
+      span.textContent = t.name;
+      label.appendChild(cb);
+      label.appendChild(span);
+      modalList.appendChild(label);
+    }
+  }
+
+  if (modalNew) {
+    modalNew.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const v = modalNew.value.trim();
+        if (v && !modalSelected.includes(v)) { modalSelected.push(v); modalNew.value = ''; renderTagModal(); }
       }
     });
   }
+  document.getElementById('tag-modal-cancel')?.addEventListener('click', () => modal.classList.add('hidden'));
+  document.getElementById('tag-modal-save')?.addEventListener('click', async () => {
+    if (modalPostId == null) return;
+    try {
+      const res = await fetch(`/api/admin/posts/${modalPostId}`, {
+        method: 'PATCH',
+        headers: CSRF,
+        body: JSON.stringify({ tagNames: modalSelected }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) { location.reload(); }
+      else alert(data.error || '保存失败');
+    } catch { alert('网络错误'); }
+  });
+  modal?.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
 </script>

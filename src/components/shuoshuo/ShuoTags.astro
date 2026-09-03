@@ -1,0 +1,40 @@
+---
+import type { TagWithCount } from '@/lib/queries';
+
+interface Props {
+  tags: TagWithCount[];
+  current?: string;
+}
+const { tags, current } = Astro.props;
+---
+{
+  tags.length > 0 && (
+    <nav class="flex flex-wrap items-center gap-1.5">
+      <a
+        href="/blog"
+        class:list={[
+          'rounded-full px-3 py-1 text-sm transition-colors',
+          !current
+            ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+            : 'text-zinc-500 hover:bg-zinc-200/70 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800/70 dark:hover:text-zinc-200',
+        ]}
+      >
+        全部
+      </a>
+      {tags.map((t) => (
+        <a
+          href={`/blog?tag=${encodeURIComponent(t.name)}`}
+          class:list={[
+            'rounded-full px-3 py-1 text-sm transition-colors',
+            current === t.name
+              ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+              : 'text-zinc-500 hover:bg-zinc-200/70 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800/70 dark:hover:text-zinc-200',
+          ]}
+        >
+          {t.name}
+          <span class="ml-1 text-xs opacity-60">{t.count}</span>
+        </a>
+      ))}
+    </nav>
+  )
+}
