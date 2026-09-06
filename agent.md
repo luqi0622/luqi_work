@@ -243,7 +243,10 @@ Vercel 控制台的环境变量值默认遮成 `••••`，**复制按钮�
 
 ## 10. QQ空间说说（qzone-shuoshuo）集成与运维 SOP
 
-**已整合进本仓库（单项目）**：`/blog` 现在是 `luqi.work` 内部的一个**服务端渲染页面**（`src/pages/blog/index.astro`，`prerender=false`），直接读 Turso 云库渲染说说；后端 API（`src/pages/api/*`）+ 前端组件（`src/components/shuoshuo/*`）全在本仓库。原先独立的 `qzone-shuoshuo` 仓库已废弃，不再被引用、不再单独部署。
+**已整合进本仓库（单项目）**：`/blog` 现在是 `luqi.work` 内部的一个**服务端渲染页面**（`src/pages/blog/index.astro`，`prerender=false`），直接读 Turso 云库渲染说说；后端 API（`src/pages/app/*`）+ 前端组件（`src/components/shuoshuo/*`）全在本仓库。原先独立的 `qzone-shuoshuo` 仓库已废弃，不再被引用、不再单独部署。
+
+> ⚠️ **Vercel 保留 `/api` 路径（2026-09-06 实测，关键坑）**：Vercel 把 `/api` 当作**保留目录**（legacy API Directory），框架 `config.json` 里注册的 `/api/*` 路由会被 Vercel 直接 404，SSR 函数永远收不到请求——表现为「页面能渲染、但所有 `/api/*` 登录/接口全 404」。其它路径（如 `/blog`、`/app`）正常。
+> **已修复**：本仓库所有后端路由前缀从 `/api` 改为 **`/app`**（`src/pages/api → src/pages/app`，前端 `fetch` 全部 `/app/...`）。改完 push 后 Vercel 全新构建即生效。今后新增后端接口**一律用 `/app` 前缀，绝不用 `/api`**。
 
 ### 10.1 功能与角色
 | 角色 | 可见/权限 | 入口 |
@@ -255,7 +258,7 @@ Vercel 控制台的环境变量值默认遮成 `••••`，**复制按钮�
 > 评论数据存在 `posts.comments` 列（JSON 数组），结构为树：`{id, name, time, content, parentId, role:'guest'|'admin', replyTo}`。旧评论在读取时由 `rowToPost()` 自动补全（id=序号、role='guest'、parentId=null），无需单独迁移脚本。
 
 ### 10.2 改「说说管理员密码」标准流程（已踩坑验证）
-密码存于 qzone-shuoshuo 的 Vercel 环境变量 **`ADMIN_PASSWORD_HASH`**（scrypt 格式 `scrypt:<saltHex>:<hashHex>`），**不在代码里**。
+密码存于本仓库（luqi-work）的 Vercel 环境变量 **`ADMIN_PASSWORD_HASH`**（scrypt 格式 `scrypt:<saltHex>:<hashHex>`），**不在代码里**。
 
 1. 在本仓库生成新哈希：
    ```bash
@@ -266,20 +269,21 @@ Vercel 控制台的环境变量值默认遮成 `••••`，**复制按钮�
 3. **Deployments → 最新部署 ⋯ → Redeploy**（或推一次 GitHub 触发全新构建）。
 4. 等 ~1–2 分钟，验证：
    ```bash
-   curl -s -X POST https://luqi.work/api/login \
+   curl -s -X POST https://luqi.work/app/login \
      -H 'content-type: application/json' -H 'x-requested-with: fetch' \
      -d '{"password":"新密码"}'
    ```
    返回 `{"ok":true}` 即成功；旧密码应返回 `{"error":"密码错误"}`（401）。
 
 > ⚠️ **关键坑（2026-09-02 实测）**：最初 `login.ts` 用 `import.meta.env.ADMIN_PASSWORD_HASH`，Astro 在**构建时**就把值写死进产物。Vercel 的「Redeploy（克隆）」复用旧构建产物，新 env 进不去 → 改了 env 密码却仍用旧密码能登、新密码登不上。
-> **已修复**：`src/pages/api/login.ts` 改为运行时 `process.env.ADMIN_PASSWORD_HASH`（保留 `import.meta.env` 兜底）。此后改密码只需 §10.2 步骤 1–3，**无需改代码、无需重新构建仓库**。
+> **已修复**：`src/pages/app/login.ts` 改为运行时 `process.env.ADMIN_PASSWORD_HASH`（保留 `import.meta.env` 兜底）。此后改密码只需 §10.2 步骤 1–3，**无需改代码、无需重新构建仓库**。
 > 同理：任何 Vercel 环境变量若被 Astro/Vite 在构建期 `import.meta.env` 引用，改它都必须触发**全新构建**（git push）才生效；Redeploy 不够。
 
 ### 10.3 其它运维要点
-- **同源登录**：`/blog` 与登录 API 同域（luqi.work），`login.ts` 的 session cookie 用 `sameSite:'lax'` + `secure` 即可，`Header.astro` 的弹窗登录成功后 `location.reload()` 即刷新出博主界面。`/api/me` 供所有页面客户端探测登录态。
+- **同源登录**：`/blog` 与登录 API 同域（luqi.work），`src/pages/app/login.ts` 的 session cookie 用 `sameSite:'lax'` + `secure` 即可，`Header.astro` 的弹窗登录成功后 `location.reload()` 即刷新出博主界面。`/app/me` 供所有页面客户端探测登录态（未登录返回 `{"authed":false}`，HTTP 200）。
 - **`/blog` 是服务端渲染**：`export const prerender = false`，每次请求读 Turso。因此 `TURSO_*` 在**构建期也要可用**（Astro 构建时会解析页面模块）；本地 `npm run dev` 必须填真实 `TURSO_*` 否则 `/blog` 报错。
-- **游客评论防护**：`/api/shuoshuo/[id]/comments.ts` 带 CSRF 头校验（`x-requested-with: fetch`）+ 蜜罐隐藏字段 + 频率限制（60s/10 次，serverless 软限制）。
+- **游客评论防护**：`/app/shuoshuo/[id]/comments.ts` 带 CSRF 头校验（`x-requested-with: fetch`）+ 蜜罐隐藏字段 + 频率限制（60s/10 次，serverless 软限制）。
 - **改本仓库代码后**：`git push` 到 `luqi0622/luqi-work` → Vercel 自动构建上线（单项目，无跨项目排队）。
+- ⚠️ **git push 被死代理拦截（2026-09-06 实测）**：本机 git **全局配置**写死了 `http.proxy socks5://127.0.0.1:7897`（未运行的 Clash 代理），直连 GitHub 正常但该代理已死 → `git push` 超时失败。绕过方式：`git -c http.proxy= -c https.proxy= -c "url.https://<PAT>@github.com/.insteadOf=https://github.com/" push origin main`（PAT 用 `ghp_...`；或去全局配置清掉该 proxy 一劳永逸）。
 - **本地构建注意**：`npm run build` 需 `CODEBUDDY_SAFE_DELETE_ENABLED=0`（见 §7.9）；且必须用 `@libsql/client/web`（见 §7.8）避免 nft 卡死。
 - 🔒 **安全**：GitHub PAT、Vercel token 等凭据用后去对应后台撤销；不要在代码或本文件硬编码明文密码/Token。改动涉及密钥时只更新 Vercel 环境变量，不写进仓库。
