@@ -193,6 +193,15 @@ featured: false
 
 > 注意：Vercel 域名页偶尔显示 ⚠️「DNS Change Recommended」，但若实际已能访问新站点，那是冗余提示，可无视，别手贱去 Remove 域名。
 
+### 6.1 获取 Vercel 里「已存在」的环境变量值（踩坑，2026-09-03）
+
+Vercel 控制台的环境变量值默认遮成 `••••`，**复制按钮默认是灰的、拖选也选不中**。需要：
+- **法①（控制台）**：点该行最右侧 👁 眼睛图标「显示」，明文出现后右边才出现 ⧉ 复制图标；若仍选不中，换 **Chrome / Edge** 重试（部分浏览器拦截）。
+- **法②（去源头拿，最稳）**：`TURSO_*` 来自 [turso.tech](https://turso.tech) 对应数据库——URL 直接明文显示；Token 点 **Generate Token** 新建一个**同库**令牌即可，与 Vercel 里旧令牌等效、数据完全一致。`ADMIN_PASSWORD_HASH` / `SESSION_SECRET` **本仓库本地 `.env`（已 gitignore）就有**，不用从 Vercel 抄。
+- **法③（Vercel CLI）**：`npx vercel login` → `npx vercel link`（选 `luqi-work`）→ `npx vercel env pull .env.local` 把全部变量拉到本地文件。
+
+> 谁也**不能直接替你在 Vercel 后台写 env**：可用连接器里没有 Vercel（仅 CloudBase/EdgeOne 等且未连接）。部署只能你自己填 env + `git push` 触发自动部署。
+
 ---
 
 ## 7. 环境踩坑与经验（给未来 Agent）
