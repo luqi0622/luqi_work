@@ -178,7 +178,10 @@ const currentPath = Astro.url.pathname;
           'ml-2 text-sm text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200';
         logout.textContent = '退出';
         logout.addEventListener('click', async () => {
-          await fetch('/app/logout', { method: 'POST' });
+          await fetch('/app/logout', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-requested-with': 'fetch' },
+          });
           location.reload();
         });
         authArea.appendChild(badge);

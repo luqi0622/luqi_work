@@ -3,7 +3,7 @@ import type { APIRoute } from 'astro';
 export const prerender = false;
 
 export const POST: APIRoute = async ({ cookies }) => {
-  cookies.delete('session', { path: '/' });
+  cookies.delete('session', { path: '/', secure: true });
   return new Response(JSON.stringify({ ok: true }), {
     headers: { 'content-type': 'application/json' },
   });
