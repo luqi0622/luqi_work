@@ -19,3 +19,8 @@ Thumbs.db
 
 # WorkBuddy 工作数据
 .workbuddy/
+
+# 本地临时部署/验证脚本（含 cookie，勿提交）
+.ck.txt
+.push_api.mjs
+.verify_deploy.mjs

@@ -354,16 +354,43 @@ async function getAllPostTexts(): Promise<{ id: number; content: string }[]> {
 /**
  * 给全部说说按关键词自动归类（幂等）：每条说说打一个主分类标签。
  * 与 scripts/import-qq-shuoshuo.mjs 使用同一套分类规则，保证随笔栏目与历史导入一致。
+ * 采用批量写入（清空旧 post_tags 后一次性插入），避免逐条写造成的超时。
  * 返回统计信息，便于后台确认归类分布。
  */
 export async function autoTagAllPosts(): Promise<{ total: number; stat: Record<string, number> }> {
   const posts = await getAllPostTexts();
   const stat: Record<string, number> = {};
-  for (const p of posts) {
+  const rows = posts.map((p) => {
     const cat = classifyText(p.content);
     stat[cat] = (stat[cat] ?? 0) + 1;
-    await setPostTags(p.id, [cat]);
+    return { id: p.id, cat };
+  });
+
+  // 1) 确保分类标签行存在
+  const cats = [...new Set(rows.map((r) => r.cat))];
+  if (cats.length > 0) {
+    await db.batch(
+      cats.map((c) => ({ sql: 'INSERT OR IGNORE INTO tags (name) VALUES (?)', args: [c] })),
+      'write'
+    );
   }
+  const tagRows = await db.execute({
+    sql: `SELECT id, name FROM tags WHERE name IN (${cats.map(() => '?').join(',')})`,
+    args: cats,
+  });
+  const tagId = new Map<string, number>();
+  for (const r of tagRows.rows) tagId.set(String(r.name), Number(r.id));
+
+  // 2) 清空旧关联，批量插入（避免逐条 DELETE + 孤儿清理带来的超时）
+  await db.batch([{ sql: 'DELETE FROM post_tags', args: [] }], 'write');
+  const inserts = rows
+    .filter((r) => tagId.has(r.cat))
+    .map((r) => ({
+      sql: 'INSERT OR IGNORE INTO post_tags (post_id, tag_id) VALUES (?, ?)',
+      args: [r.id, tagId.get(r.cat)!],
+    }));
+  if (inserts.length > 0) await db.batch(inserts, 'write');
+
   return { total: posts.length, stat };
 }
 

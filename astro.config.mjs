@@ -14,7 +14,7 @@ import rehypeKatex from 'rehype-katex';
 export default defineConfig({
   site: 'https://luqi.work',
   output: 'static',
-  adapter: vercel(),
+  adapter: vercel({ maxDuration: 60 }),
   integrations: [
     mdx(),
     sitemap(),
