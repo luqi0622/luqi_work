@@ -249,6 +249,13 @@ export async function getPostTags(postId: number): Promise<string[]> {
   return rs.rows.map((r) => String(r.name));
 }
 
+/** 取单条说说（comments 已解析为结构化数组），找不到或被删除返回 null —— 用于独立详情页 */
+export async function getPost(id: number): Promise<Post | null> {
+  const row = await getRawPost(id);
+  if (!row || row.deleted_at != null) return null;
+  return rowToPost(row);
+}
+
 /** 一次查出所有说说的标签映射（后台列表用，避免 N+1） */
 export async function getPostTagsMap(): Promise<Map<number, string[]>> {
   const rs = await db.execute(
