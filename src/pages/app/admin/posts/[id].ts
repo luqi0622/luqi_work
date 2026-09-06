@@ -13,6 +13,7 @@ function badRequest(msg: string) {
 type Body = {
   content?: unknown;
   pinned?: unknown;
+  isPrivate?: unknown;
   tagNames?: unknown;
 };
 
@@ -41,6 +42,11 @@ export const PATCH: APIRoute = async ({ params, request }) => {
   if (body.pinned !== undefined) {
     if (typeof body.pinned !== 'number' || ![0, 1].includes(body.pinned)) return badRequest('pinned 必须为 0 或 1');
     updated = (await updatePost(id, { pinned: body.pinned })) || updated;
+  }
+
+  if (body.isPrivate !== undefined) {
+    if (typeof body.isPrivate !== 'number' || ![0, 1].includes(body.isPrivate)) return badRequest('isPrivate 必须为 0 或 1');
+    updated = (await updatePost(id, { isPrivate: body.isPrivate })) || updated;
   }
 
   if (body.tagNames !== undefined) {

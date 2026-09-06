@@ -26,6 +26,8 @@ export interface Post {
   rt: string | null;
   comments: CommentItem[];
   pinned: number;
+  /** 1 = 私密（仅博主登录可见），0 = 公开 */
+  isPrivate: number;
   deleted_at: number | null;
 }
 
@@ -36,25 +38,13 @@ export interface TagWithCount {
 }
 
 /* ------------------------------------------------------------------ */
-/* 表态（Reactions）：赞 / 踩 / 思考 / 共鸣                              */
+/* 表态（Reactions）：Emoji 快捷表情（Slack / 即刻 风格）                */
 /* ------------------------------------------------------------------ */
 
-/** 允许的表态类型（顺序即展示顺序） */
-export const REACTION_KINDS = ['like', 'dislike', 'think', 'resonate'] as const;
-export type ReactionKind = (typeof REACTION_KINDS)[number];
+/** 快捷表情面板里的常用表情（顺序即展示顺序）；点击任意表情即 +1 */
+export const REACTION_EMOJIS = ['👍', '❤️', '😂', '🎉', '🔥', '☕', '💡', '🚀', '🙏', '✨', '😮', '💯'];
 
-export const REACTION_META: Record<ReactionKind, { emoji: string; label: string }> = {
-  like: { emoji: '👍', label: '赞' },
-  dislike: { emoji: '👎', label: '踩' },
-  think: { emoji: '💡', label: '思考' },
-  resonate: { emoji: '❤️', label: '共鸣' },
-};
-
-export function isReactionKind(v: unknown): v is ReactionKind {
-  return typeof v === 'string' && (REACTION_KINDS as readonly string[]).includes(v);
-}
-
-/** 建表（幂等，进程内只跑一次） */
+/** 建表 + 旧数据迁移（幂等，进程内只跑一次） */
 let reactionsReady: Promise<void> | null = null;
 function ensureReactionsTable(): Promise<void> {
   if (!reactionsReady) {
@@ -82,6 +72,16 @@ function ensureReactionsTable(): Promise<void> {
         ],
         'write'
       );
+      // 历史数据迁移：旧的 赞/踩/思考/共鸣 → emoji（保留已有计数）
+      await db.batch(
+        [
+          { sql: `UPDATE reactions SET kind = '👍' WHERE kind = 'like'` },
+          { sql: `UPDATE reactions SET kind = '👎' WHERE kind = 'dislike'` },
+          { sql: `UPDATE reactions SET kind = '💡' WHERE kind = 'think'` },
+          { sql: `UPDATE reactions SET kind = '❤️' WHERE kind = 'resonate'` },
+        ],
+        'write'
+      );
     })().catch((e) => {
       reactionsReady = null;
       throw e;
@@ -90,11 +90,11 @@ function ensureReactionsTable(): Promise<void> {
   return reactionsReady;
 }
 
-/** 批量取多条说说的表态计数：Map<postId, {like: n, ...}> */
+/** 批量取多条说说的表态计数：Map<postId, {emoji: n, ...}>（仅含数量>0 的表情） */
 export async function getReactionsMap(
   postIds: number[]
-): Promise<Map<number, Record<ReactionKind, number>>> {
-  const out = new Map<number, Record<ReactionKind, number>>();
+): Promise<Map<number, Record<string, number>>> {
+  const out = new Map<number, Record<string, number>>();
   if (postIds.length === 0) return out;
   await ensureReactionsTable();
   const rs = await db.execute({
@@ -105,15 +105,15 @@ export async function getReactionsMap(
   });
   for (const r of rs.rows) {
     const pid = Number(r.post_id);
-    const kind = String(r.kind) as ReactionKind;
-    const rec = out.get(pid) ?? { like: 0, dislike: 0, think: 0, resonate: 0 };
+    const kind = String(r.kind);
+    const rec = out.get(pid) ?? {};
     rec[kind] = Number(r.n);
     out.set(pid, rec);
   }
   return out;
 }
 
-/** 取某访客（匿名 vid）已表态的集合：Set<"postId:kind"> */
+/** 取某访客（匿名 vid）已表态的集合：Set<"postId:emoji"> */
 export async function getMyReactions(vid: string | undefined): Promise<Set<string>> {
   if (!vid) return new Set();
   await ensureReactionsTable();
@@ -124,12 +124,12 @@ export async function getMyReactions(vid: string | undefined): Promise<Set<strin
   return new Set(rs.rows.map((r) => `${Number(r.post_id)}:${String(r.kind)}`));
 }
 
-/** 切换表态：同一访客对同一说说的同一表态可反复切换；返回最新状态与计数 */
+/** 切换表态：同一访客对同一说说的同一表情可反复切换；返回最新状态与计数 */
 export async function toggleReaction(
   postId: number,
-  kind: ReactionKind,
+  kind: string,
   vid: string
-): Promise<{ active: boolean; counts: Record<ReactionKind, number> }> {
+): Promise<{ active: boolean; counts: Record<string, number> }> {
   await ensureReactionsTable();
   const now = Math.floor(Date.now() / 1000);
   const existed = await db.execute({
@@ -142,14 +142,6 @@ export async function toggleReaction(
       args: [postId, kind, vid],
     });
   } else {
-    // 同一访客对同一说说的「赞/踩」互斥，避免同时点亮
-    if (kind === 'like' || kind === 'dislike') {
-      const opposite = kind === 'like' ? 'dislike' : 'like';
-      await db.execute({
-        sql: 'DELETE FROM reactions WHERE post_id = ? AND kind = ? AND visitor = ?',
-        args: [postId, opposite, vid],
-      });
-    }
     await db.execute({
       sql: 'INSERT INTO reactions (post_id, kind, visitor, created_at) VALUES (?, ?, ?, ?)',
       args: [postId, kind, vid, now],
@@ -158,7 +150,7 @@ export async function toggleReaction(
   const map = await getReactionsMap([postId]);
   return {
     active: existed.rows.length === 0,
-    counts: map.get(postId) ?? { like: 0, dislike: 0, think: 0, resonate: 0 },
+    counts: map.get(postId) ?? {},
   };
 }
 
@@ -199,19 +191,36 @@ function rowToPost(r: PostRow): Post {
     rt: r.rt,
     comments,
     pinned: r.pinned,
+    isPrivate: r.is_private ? 1 : 0,
     deleted_at: r.deleted_at,
   };
 }
 
-const POST_COLUMNS = 'p.id, p.t, p.content, p.pics, p.rt, p.comments, p.pinned, p.deleted_at';
+const POST_COLUMNS = 'p.id, p.t, p.content, p.pics, p.rt, p.comments, p.pinned, p.is_private, p.deleted_at';
 
-/** 前台列表：正常说说，可按标签筛选、按时间/热度排序 */
+/** 确保 posts 表含 is_private 列（老库迁移；幂等，失败不影响其他逻辑） */
+let postsReady: Promise<void> | null = null;
+function ensurePostsTable(): Promise<void> {
+  if (!postsReady) {
+    postsReady = db
+      .execute({ sql: `ALTER TABLE posts ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0` })
+      .then(() => undefined)
+      .catch(() => undefined);
+  }
+  return postsReady;
+}
+
+/** 前台列表：正常说说，可按标签筛选、按时间/热度排序；未登录时隐藏私密说说 */
 export async function listPosts(
-  opts: { tag?: string; sort?: 'time' | 'hot' } = {}
+  opts: { tag?: string; sort?: 'time' | 'hot'; isAuthed?: boolean } = {}
 ): Promise<Post[]> {
+  await ensurePostsTable();
   const sort = opts.sort === 'hot' ? 'hot' : 'time';
   let sql = `SELECT ${POST_COLUMNS} FROM posts p WHERE p.deleted_at IS NULL`;
   const args: unknown[] = [];
+  if (!opts.isAuthed) {
+    sql += ` AND (p.is_private IS NULL OR p.is_private = 0)`;
+  }
   if (opts.tag) {
     sql += ` AND p.id IN (SELECT pt.post_id FROM post_tags pt JOIN tags t ON t.id = pt.tag_id WHERE t.name = ?)`;
     args.push(opts.tag);
@@ -232,10 +241,11 @@ export async function listAllPosts(): Promise<Post[]> {
   return rs.rows.map((r) => rowToPost(r as unknown as PostRow));
 }
 
-/** 最新的 n 条说说（按创建时间倒序，忽略置顶），用于首页「最新随笔」 */
+/** 最新的 n 条说说（按创建时间倒序，忽略置顶），用于首页「最新随笔」（公开，排除私密） */
 export async function listLatestPosts(n: number): Promise<Post[]> {
+  await ensurePostsTable();
   const rs = await db.execute({
-    sql: `SELECT ${POST_COLUMNS} FROM posts p WHERE p.deleted_at IS NULL ORDER BY p.t DESC LIMIT ?`,
+    sql: `SELECT ${POST_COLUMNS} FROM posts p WHERE p.deleted_at IS NULL AND (p.is_private IS NULL OR p.is_private = 0) ORDER BY p.t DESC LIMIT ?`,
     args: [n],
   });
   return rs.rows.map((r) => rowToPost(r as unknown as PostRow));
@@ -280,10 +290,10 @@ export async function listTags(): Promise<TagWithCount[]> {
   return rs.rows.map((r) => ({ id: Number(r.id), name: String(r.name), count: Number(r.count) }));
 }
 
-/** 编辑正文 / 置顶切换 */
+/** 编辑正文 / 置顶切换 / 私密 */
 export async function updatePost(
   id: number,
-  patch: { content?: string; pinned?: number }
+  patch: { content?: string; pinned?: number; isPrivate?: number }
 ): Promise<boolean> {
   const sets: string[] = ['updated_at = ?'];
   const args: unknown[] = [Math.floor(Date.now() / 1000)];
@@ -294,6 +304,10 @@ export async function updatePost(
   if (patch.pinned !== undefined) {
     sets.push('pinned = ?');
     args.push(patch.pinned ? 1 : 0);
+  }
+  if (patch.isPrivate !== undefined) {
+    sets.push('is_private = ?');
+    args.push(patch.isPrivate ? 1 : 0);
   }
   args.push(id);
   const rs = await db.execute({ sql: `UPDATE posts SET ${sets.join(', ')} WHERE id = ?`, args: args as never });
@@ -411,6 +425,7 @@ export async function autoTagAllPosts(): Promise<{ total: number; stat: Record<s
 
 /** 取单条原始记录（含 comments 文本），找不到返回 null */
 async function getRawPost(id: number): Promise<PostRow | null> {
+  await ensurePostsTable();
   const rs = await db.execute({ sql: `SELECT ${POST_COLUMNS} FROM posts p WHERE id = ?`, args: [id] });
   if (rs.rows.length === 0) return null;
   return rs.rows[0] as unknown as PostRow;

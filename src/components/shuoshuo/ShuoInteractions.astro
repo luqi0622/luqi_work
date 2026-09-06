@@ -70,14 +70,55 @@ const { tags } = Astro.props;
     });
   }
 
-  // —— 表态（赞 / 踩 / 思考 / 共鸣）——
-  document.addEventListener('click', async (e) => {
-    const btn = e.target.closest && e.target.closest('.reaction-btn');
-    if (!btn) return;
-    e.preventDefault();
+  // —— 表态：Emoji 快捷表情（Slack / 即刻 风格）——
+  const REACT_BASE = 'reaction-chip inline-flex min-h-9 items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs transition-all active:scale-95';
+  const REACT_ACTIVE = ['border-brand-500', 'bg-brand-50', 'font-medium', 'text-brand-700', 'dark:border-brand-500', 'dark:bg-brand-500/15', 'dark:text-brand-300'];
+  const REACT_INACTIVE = ['border-zinc-200', 'text-zinc-500', 'hover:border-brand-300', 'hover:bg-brand-50/60', 'hover:text-brand-700', 'dark:border-zinc-700', 'dark:text-zinc-400', 'dark:hover:border-brand-700', 'dark:hover:bg-brand-500/10', 'dark:hover:text-brand-300'];
+
+  function closeAllReactionPanels(except) {
+    document.querySelectorAll('.reaction-panel').forEach((p) => { if (p !== except) p.classList.add('hidden'); });
+  }
+
+  function buildChip(postId, emoji, n, active) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = REACT_BASE + ' ' + (active ? REACT_ACTIVE.join(' ') : REACT_INACTIVE.join(' '));
+    btn.dataset.postId = String(postId);
+    btn.dataset.kind = emoji;
+    btn.dataset.active = active ? '1' : '0';
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    btn.title = '点击切换';
+    const emo = document.createElement('span');
+    emo.className = 'text-sm leading-none reaction-emoji';
+    emo.setAttribute('aria-hidden', 'true');
+    emo.textContent = emoji;
+    const cnt = document.createElement('span');
+    cnt.className = 'reaction-count tabular-nums' + (n > 0 ? '' : ' hidden');
+    cnt.dataset.count = String(n);
+    cnt.textContent = String(n);
+    btn.appendChild(emo);
+    btn.appendChild(cnt);
+    return btn;
+  }
+
+  function updateReactionTotal(bar) {
+    const total = [...bar.querySelectorAll('.reaction-chip .reaction-count')]
+      .reduce((s, el) => s + (Number(el.dataset.count) || 0), 0);
+    let span = bar.querySelector('.reaction-total');
+    if (total > 0) {
+      if (!span) {
+        span = document.createElement('span');
+        span.className = 'reaction-total ml-1 text-xs text-zinc-400 dark:text-zinc-600';
+        bar.appendChild(span);
+      }
+      span.textContent = `共 ${total} 次表态`;
+    } else if (span) {
+      span.remove();
+    }
+  }
+
+  async function toggleReaction(btn, postId, kind) {
     if (btn.dataset.busy === '1') return;
-    const postId = Number(btn.dataset.postId);
-    const kind = btn.dataset.kind;
     btn.dataset.busy = '1';
     try {
       const res = await fetch('/app/reactions', {
@@ -89,42 +130,70 @@ const { tags } = Astro.props;
       if (!res.ok || !data.ok) { alert(data.error || '操作失败'); return; }
       const counts = data.counts || {};
       const bar = btn.closest('[data-reaction-bar]');
-      if (bar) {
-        // 赞 / 踩 互斥：先熄灭 opposite
-        if (data.active && (kind === 'like' || kind === 'dislike')) {
-          const opposite = kind === 'like' ? 'dislike' : 'like';
-          const other = bar.querySelector(`.reaction-btn[data-kind="${opposite}"]`);
-          if (other) {
-            other.dataset.active = '0';
-            other.setAttribute('aria-pressed', 'false');
-            other.classList.remove('border-brand-500', 'bg-brand-50', 'font-medium', 'text-brand-700');
-            other.classList.add('border-zinc-200', 'text-zinc-500');
-          }
+      if (!bar) return;
+      const n = counts[kind] || 0;
+      const active = !!data.active;
+      let chip = null;
+      bar.querySelectorAll('.reaction-chip').forEach((c) => { if (c.dataset.kind === kind) chip = c; });
+      if (n === 0) {
+        if (chip) chip.remove();
+      } else {
+        if (!chip) {
+          const wrap = bar.querySelector('.reaction-picker-wrap');
+          chip = buildChip(postId, kind, n, active);
+          if (wrap) wrap.before(chip); else bar.appendChild(chip);
         }
-        bar.querySelectorAll('.reaction-btn').forEach((b) => {
-          const k = b.dataset.kind;
-          const n = counts[k] || 0;
-          const cnt = b.querySelector('.reaction-count');
-          if (cnt) {
-            cnt.textContent = String(n);
-            if (n > 0) cnt.classList.remove('hidden');
-            else cnt.classList.add('hidden');
-          }
-          if (k !== kind) return;
-          const on = !!data.active;
-          b.dataset.active = on ? '1' : '0';
-          b.setAttribute('aria-pressed', on ? 'true' : 'false');
-          if (on) {
-            b.classList.add('border-brand-500', 'bg-brand-50', 'font-medium', 'text-brand-700');
-            b.classList.remove('border-zinc-200', 'text-zinc-500');
-          } else {
-            b.classList.remove('border-brand-500', 'bg-brand-50', 'font-medium', 'text-brand-700');
-            b.classList.add('border-zinc-200', 'text-zinc-500');
-          }
-        });
+        chip.dataset.active = active ? '1' : '0';
+        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+        const cnt = chip.querySelector('.reaction-count');
+        if (cnt) { cnt.textContent = String(n); cnt.dataset.count = String(n); if (n > 0) cnt.classList.remove('hidden'); }
+        if (active) {
+          chip.classList.add(...REACT_ACTIVE);
+          chip.classList.remove(...REACT_INACTIVE);
+        } else {
+          chip.classList.remove(...REACT_ACTIVE);
+          chip.classList.add(...REACT_INACTIVE);
+        }
+        // 弹性缩放动画
+        chip.classList.remove('pop'); void chip.offsetWidth; chip.classList.add('pop');
       }
+      updateReactionTotal(bar);
     } catch { alert('网络错误'); }
     btn.dataset.busy = '0';
+  }
+
+  document.addEventListener('click', (e) => {
+    const addBtn = e.target.closest && e.target.closest('.reaction-add');
+    if (addBtn) {
+      const bar = addBtn.closest('[data-reaction-bar]');
+      const panel = bar && bar.querySelector('.reaction-panel');
+      if (panel) {
+        const willOpen = panel.classList.contains('hidden');
+        closeAllReactionPanels(panel);
+        panel.classList.toggle('hidden', !willOpen);
+      }
+      return;
+    }
+    const pick = e.target.closest && e.target.closest('.reaction-pick');
+    if (pick) {
+      const postId = Number(pick.dataset.postId);
+      const kind = pick.dataset.kind;
+      const bar = pick.closest('[data-reaction-bar]');
+      const panel = bar && bar.querySelector('.reaction-panel');
+      if (panel) panel.classList.add('hidden');
+      toggleReaction(pick, postId, kind);
+      return;
+    }
+    const chip = e.target.closest && e.target.closest('.reaction-chip');
+    if (chip) {
+      const postId = Number(chip.dataset.postId);
+      const kind = chip.dataset.kind;
+      toggleReaction(chip, postId, kind);
+      return;
+    }
+    if (!e.target.closest || !e.target.closest('.reaction-picker-wrap')) {
+      closeAllReactionPanels(null);
+    }
   });
 
   // —— 评论 / 回复 提交（事件委托）——
@@ -274,6 +343,19 @@ const { tags } = Astro.props;
         const data = await res.json().catch(() => ({}));
         if (res.ok && data.ok) { location.reload(); }
         else alert(data.error || '删除失败');
+      } catch { alert('网络错误'); }
+      return;
+    }
+    const privBtn = e.target.closest && e.target.closest('button.private-toggle');
+    if (privBtn) {
+      const postId = Number(privBtn.dataset.postId);
+      const isPrivate = privBtn.dataset.private === '1' ? 0 : 1;
+      closeMenu(privBtn);
+      try {
+        const res = await fetch(`/app/admin/posts/${postId}`, { method: 'PATCH', headers: CSRF, body: JSON.stringify({ isPrivate }) });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) { location.reload(); }
+        else alert(data.error || '操作失败');
       } catch { alert('网络错误'); }
       return;
     }

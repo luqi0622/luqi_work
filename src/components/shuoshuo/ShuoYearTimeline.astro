@@ -1,0 +1,81 @@
+---
+interface Props {
+  /** 有内容的年份（降序），用于点状指示器 */
+  years: number[];
+}
+const { years } = Astro.props;
+---
+
+{
+  years.length > 1 && (
+    <nav
+      class="year-timeline sticky top-2 z-30 -mx-1 mb-4 flex items-center gap-1.5 overflow-x-auto rounded-full border border-zinc-200/70 bg-white/85 px-3 py-2 backdrop-blur dark:border-zinc-800/70 dark:bg-zinc-900/75"
+      aria-label="年份时光轴"
+    >
+      {
+        years.map((y, i) => (
+          <span class="inline-flex items-center gap-1.5">
+            <button
+              type="button"
+              class="year-dot inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-1 text-xs font-medium transition-colors"
+              data-year={y}
+              aria-label={`跳到 ${y} 年`}
+            >
+              <span class="dot h-1.5 w-1.5 rounded-full bg-zinc-300 transition-colors dark:bg-zinc-600"></span>
+              <span class="year-label text-zinc-500 dark:text-zinc-400">{y}</span>
+            </button>
+          </span>
+        ))
+      }
+    </nav>
+  )
+}
+
+<script>
+  const root = document.querySelector('.year-timeline');
+  if (root) {
+    const dots = Array.from(root.querySelectorAll<HTMLElement>('.year-dot'));
+    dots.forEach((d) => {
+      d.addEventListener('click', () => {
+        const el = document.getElementById('year-' + d.dataset.year);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+    const sections = dots
+      .map((d) => document.getElementById('year-' + d.dataset.year))
+      .filter((s): s is HTMLElement => !!s);
+    if (sections.length) {
+      const obs = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((en) => {
+            if (!en.isIntersecting) return;
+            const y = en.target.dataset.year;
+            dots.forEach((d) => {
+              const on = d.dataset.year === y;
+              const dot = d.querySelector<HTMLElement>('.dot');
+              const label = d.querySelector<HTMLElement>('.year-label');
+              d.classList.toggle('opacity-100', true);
+              dot?.classList.toggle('bg-brand-500', on);
+              dot?.classList.toggle('bg-zinc-300', !on);
+              dot?.classList.toggle('dark:bg-brand-400', on);
+              dot?.classList.toggle('dark:bg-zinc-600', !on);
+              label?.classList.toggle('text-brand-700', on);
+              label?.classList.toggle('font-semibold', on);
+              label?.classList.toggle('text-zinc-500', !on);
+              label?.classList.toggle('dark:text-brand-300', on);
+              label?.classList.toggle('dark:text-zinc-400', !on);
+            });
+          });
+        },
+        { rootMargin: '-15% 0px -75% 0px', threshold: 0 }
+      );
+      sections.forEach((s) => obs.observe(s));
+      // 初始高亮第一个可见年份
+      if (sections[0]) {
+        const firstDot = dots.find((d) => d.dataset.year === sections[0].dataset.year);
+        firstDot?.querySelector<HTMLElement>('.dot')?.classList.add('bg-brand-500', 'dark:bg-brand-400');
+        firstDot?.querySelector<HTMLElement>('.year-label')?.classList.add('text-brand-700', 'font-semibold', 'dark:text-brand-300');
+      }
+    }
+  }
+</script>

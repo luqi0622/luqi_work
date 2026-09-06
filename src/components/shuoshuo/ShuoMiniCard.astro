@@ -1,20 +1,21 @@
 ---
 import { formatBeijing } from '@/utils/time';
-import type { Post, ReactionKind } from '@/lib/queries';
+import type { Post } from '@/lib/queries';
 
 interface Props {
   post: Post;
   tags?: string[];
-  reactions?: Record<ReactionKind, number>;
+  reactions?: Record<string, number>;
 }
 const { post, tags = [], reactions } = Astro.props;
 const content = post.content.trim();
 const preview = content.length > 120 ? content.slice(0, 120) + '…' : content;
 const dateStr = formatBeijing(post.t);
 
-const like = reactions?.like ?? 0;
-const resonate = reactions?.resonate ?? 0;
 const commentCount = post.comments.length;
+const emojiKeys = reactions ? Object.keys(reactions).sort((a, b) => reactions[b] - reactions[a]) : [];
+const totalReacts = emojiKeys.reduce((s, e) => s + (reactions?.[e] ?? 0), 0);
+const topEmojis = emojiKeys.slice(0, 2);
 ---
 <article
   class="card-hover group relative flex flex-col overflow-hidden rounded-2xl border border-zinc-200/70 bg-white p-5 transition-all duration-300 hover:-translate-y-1 hover:border-brand-300 hover:shadow-lg hover:shadow-brand-500/10 dark:border-zinc-800/70 dark:bg-zinc-900/40 dark:hover:border-brand-500/40 dark:hover:shadow-brand-500/5"
@@ -63,13 +64,13 @@ const commentCount = post.comments.length;
         )
       }
       {
-        like > 0 && (
-          <span class="inline-flex items-center gap-1">👍 {like}</span>
-        )
+        topEmojis.map((e) => (
+          <span class="inline-flex items-center gap-1">{e} {reactions?.[e] ?? 0}</span>
+        ))
       }
       {
-        resonate > 0 && (
-          <span class="inline-flex items-center gap-1">❤️ {resonate}</span>
+        totalReacts > 0 && emojiKeys.length > 2 && (
+          <span class="text-zinc-300 dark:text-zinc-600">+{emojiKeys.length - 2}</span>
         )
       }
     </div>

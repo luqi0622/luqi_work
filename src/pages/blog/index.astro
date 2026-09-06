@@ -5,6 +5,7 @@ import ShuoPost from '@/components/shuoshuo/ShuoPost.astro';
 import ShuoCompose from '@/components/shuoshuo/ShuoCompose.astro';
 import ShuoTags from '@/components/shuoshuo/ShuoTags.astro';
 import ShuoInteractions from '@/components/shuoshuo/ShuoInteractions.astro';
+import ShuoYearTimeline from '@/components/shuoshuo/ShuoYearTimeline.astro';
 import {
   listPosts,
   listTags,
@@ -13,6 +14,7 @@ import {
   getMyReactions,
 } from '@/lib/queries';
 import { checkAuth } from '@/lib/auth';
+import { formatBeijing } from '@/utils/time';
 
 const tag = Astro.url.searchParams.get('tag') ?? undefined;
 const sort = Astro.url.searchParams.get('sort') === 'hot' ? 'hot' : 'time';
@@ -25,6 +27,18 @@ const [reactionsMap, mine] = await Promise.all([
   getReactionsMap(posts.map((p) => p.id)),
   getMyReactions(vid),
 ]);
+
+// 按年份分组（置顶独立区 + 年份降序），驱动「迷你时光轴」
+const yearOf = (t: number) => Number(formatBeijing(t).slice(0, 4));
+const pinnedPosts = posts.filter((p) => p.pinned === 1);
+const normalPosts = posts.filter((p) => p.pinned !== 1);
+const yearMap = new Map<number, typeof normalPosts>();
+for (const p of normalPosts) {
+  const y = yearOf(p.t);
+  if (!yearMap.has(y)) yearMap.set(y, []);
+  yearMap.get(y)!.push(p);
+}
+const years = [...yearMap.keys()].sort((a, b) => b - a);
 ---
 <BaseLayout
   title="感悟随笔"
@@ -79,16 +93,39 @@ const [reactionsMap, mine] = await Promise.all([
       </div>
     </div>
 
-    <div class="mt-6 border-l border-zinc-200 dark:border-zinc-800">
+    <ShuoYearTimeline years={years} />
+
+    <div class="mt-2 border-l border-zinc-200 pl-5 dark:border-zinc-800">
       {
-        posts.map((p) => (
-          <ShuoPost
-            post={p}
-            tags={tagMap.get(p.id) ?? []}
-            isAuthed={isAuthed}
-            reactions={reactionsMap.get(p.id)}
-            mine={mine}
-          />
+        pinnedPosts.length > 0 && (
+          <div class="mb-4">
+            <p class="mb-3 text-xs font-semibold tracking-wide text-amber-600 dark:text-amber-400">置顶</p>
+            {pinnedPosts.map((p) => (
+              <ShuoPost
+                post={p}
+                tags={tagMap.get(p.id) ?? []}
+                isAuthed={isAuthed}
+                reactions={reactionsMap.get(p.id)}
+                mine={mine}
+              />
+            ))}
+          </div>
+        )
+      }
+      {
+        years.map((y) => (
+          <section id={`year-${y}`} class="scroll-mt-20" data-year={y}>
+            <h2 class="-ml-5 mb-3 text-sm font-bold tracking-wide text-zinc-400 dark:text-zinc-500">{y}</h2>
+            {(yearMap.get(y) || []).map((p) => (
+              <ShuoPost
+                post={p}
+                tags={tagMap.get(p.id) ?? []}
+                isAuthed={isAuthed}
+                reactions={reactionsMap.get(p.id)}
+                mine={mine}
+              />
+            ))}
+          </section>
         ))
       }
     </div>

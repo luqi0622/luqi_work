@@ -22,6 +22,7 @@ let reactionsMap: Awaited<ReturnType<typeof getReactionsMap>> = new Map();
 let mine = new Set<string>();
 let allTags: { id: number; name: string }[] = [];
 let isAuthed = false;
+let gated = false;
 let pageTitle = '说说未找到';
 let description = '这条说说可能已被删除，或链接有误。';
 
@@ -30,6 +31,7 @@ if (valid) {
   if (post) {
     const vid = Astro.cookies.get('vid')?.value;
     isAuthed = checkAuth(Astro.cookies.get('session')?.value, import.meta.env.SESSION_SECRET);
+    gated = post.isPrivate === 1 && !isAuthed;
     const [t, rm, m, at] = await Promise.all([
       getPostTags(id),
       getReactionsMap([id]),
@@ -41,14 +43,19 @@ if (valid) {
     mine = m;
     allTags = at;
 
-    const text = post.content.trim();
-    const firstLine = text ? text.split('\n')[0].trim() : '';
-    pageTitle = firstLine ? (firstLine.length > 30 ? firstLine.slice(0, 30) + '…' : firstLine) : '一条说说';
-    description = text
-      ? text.length > 100
-        ? text.slice(0, 100) + '…'
-        : text
-      : '来自 luqi.work 的一条随笔说说';
+    if (gated) {
+      pageTitle = '私密说说';
+      description = '这条说说已设为私密，仅博主登录后可见。';
+    } else {
+      const text = post.content.trim();
+      const firstLine = text ? text.split('\n')[0].trim() : '';
+      pageTitle = firstLine ? (firstLine.length > 30 ? firstLine.slice(0, 30) + '…' : firstLine) : '一条说说';
+      description = text
+        ? text.length > 100
+          ? text.slice(0, 100) + '…'
+          : text
+        : '来自 luqi.work 的一条随笔说说';
+    }
   }
 }
 
@@ -72,6 +79,28 @@ if (!post) {
         >
           ← 返回感悟随笔
         </a>
+      </section>
+    </BaseLayout>
+  ) : gated ? (
+    <BaseLayout title={pageTitle} description={description}>
+      <section class="py-20 text-center">
+        <p class="text-5xl">🔒</p>
+        <h1 class="mt-4 text-2xl font-bold text-zinc-900 dark:text-zinc-100">私密说说</h1>
+        <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">这条说说已设为私密，仅博主登录后可见。</p>
+        <div class="mt-6 flex items-center justify-center gap-3">
+          <a
+            href="/app/login"
+            class="inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700"
+          >
+            前往登录
+          </a>
+          <a
+            href="/blog"
+            class="inline-flex items-center gap-1.5 text-sm text-zinc-500 transition-colors hover:text-brand-700 dark:text-zinc-400 dark:hover:text-brand-300"
+          >
+            ← 返回感悟随笔
+          </a>
+        </div>
       </section>
     </BaseLayout>
   ) : (
