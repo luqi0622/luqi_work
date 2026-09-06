@@ -217,8 +217,8 @@ export async function listPosts(
     args.push(opts.tag);
   }
   if (sort === 'hot') {
-    // 最热：按表态总数降序，同分按时间倒序（忽略置顶，让热门内容自然上浮）
-    sql += ` ORDER BY (SELECT COUNT(*) FROM reactions r WHERE r.post_id = p.id) DESC, p.t DESC`;
+    // 最热：置顶优先，再按表态总数降序，同分按时间倒序（让博主置顶内容在热度视图仍靠前）
+    sql += ` ORDER BY p.pinned DESC, (SELECT COUNT(*) FROM reactions r WHERE r.post_id = p.id) DESC, p.t DESC`;
   } else {
     sql += ` ORDER BY p.pinned DESC, p.t DESC`;
   }
