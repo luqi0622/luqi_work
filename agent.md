@@ -281,6 +281,9 @@ Vercel 控制台的环境变量值默认遮成 `••••`，**复制按钮�
 
 ### 10.3 其它运维要点
 - **同源登录**：`/blog` 与登录 API 同域（luqi.work），`src/pages/app/login.ts` 的 session cookie 用 `sameSite:'lax'` + `secure` 即可，`Header.astro` 的弹窗登录成功后 `location.reload()` 即刷新出博主界面。`/app/me` 供所有页面客户端探测登录态（未登录返回 `{"authed":false}`，HTTP 200）。
+- ⚠️ **退出登录 403（2026-09-06 实测）**：Astro 5 内置 `astro:security` 的 `checkOrigin` 会拦截「非 JSON 的跨站 POST 表单」。退出按钮原 `fetch('/app/logout',{method:'POST'})` 没带 `Content-Type`，浏览器默认 `text/plain` → 被 Astro 判为跨站 → 返回 403「Cross-site POST form submissions are forbidden」，**session cookie 没清、刷新后仍在登录态**。
+  **已修复**：① `Header.astro` 的退出 `fetch` 加 `headers:{'content-type':'application/json','x-requested-with':'fetch'}`（与登录一致）；② `src/pages/app/logout.ts` 删除 cookie 时显式带 `secure:true`，确保匹配登录时 `secure` 的 session cookie 能被真正清除。
+  **通用规则**：本仓库所有 `fetch` POST/PUT/PATCH/DELETE 必须带 `Content-Type: application/json`（评论/管理接口已用 `CSRF` 头，没问题），否则会被 Astro 跨站校验 403。
 - **`/blog` 是服务端渲染**：`export const prerender = false`，每次请求读 Turso。因此 `TURSO_*` 在**构建期也要可用**（Astro 构建时会解析页面模块）；本地 `npm run dev` 必须填真实 `TURSO_*` 否则 `/blog` 报错。
 - **游客评论防护**：`/app/shuoshuo/[id]/comments.ts` 带 CSRF 头校验（`x-requested-with: fetch`）+ 蜜罐隐藏字段 + 频率限制（60s/10 次，serverless 软限制）。
 - **改本仓库代码后**：`git push` 到 `luqi0622/luqi-work` → Vercel 自动构建上线（单项目，无跨项目排队）。
