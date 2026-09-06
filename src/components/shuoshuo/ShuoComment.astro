@@ -20,7 +20,7 @@ const endpoint = isAuthed ? '/app/admin/comments' : `/app/shuoshuo/${postId}/com
     <span class="font-medium text-zinc-700 dark:text-zinc-200">{comment.name}</span>
     {
       comment.role === 'admin' ? (
-        <span class="inline-flex items-center rounded-full bg-gradient-to-r from-rose-500 to-fuchsia-500 px-1.5 py-0.5 text-[10px] font-medium text-white">博主</span>
+        <span class="inline-flex items-center rounded-full bg-gradient-to-r from-brand-600 to-brand-500 px-1.5 py-0.5 text-[10px] font-medium text-white">博主</span>
       ) : (
         <span class="inline-flex items-center rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">游客</span>
       )
@@ -68,18 +68,12 @@ const endpoint = isAuthed ? '/app/admin/comments' : `/app/shuoshuo/${postId}/com
       isAuthed ? (
         <p class="text-xs text-zinc-400 dark:text-zinc-500">以「博主」身份回复</p>
       ) : (
-        <input
-          type="text"
-          class="reply-name rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 text-sm outline-none placeholder:text-zinc-400 focus:border-zinc-400 dark:border-zinc-800 dark:placeholder:text-zinc-600"
-          placeholder="昵称"
-          maxlength="20"
-          required
-        />
+        <p class="text-xs text-zinc-400 dark:text-zinc-500">以「匿名」身份回复</p>
       )
     }
     <textarea
-      class="reply-content resize-y rounded-lg border border-zinc-200 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-zinc-400 focus:border-zinc-400 dark:border-zinc-800 dark:placeholder:text-zinc-600"
-      placeholder={`回复 @${comment.name}…`}
+      class="reply-content resize-y rounded-lg border border-zinc-200 bg-transparent px-3 py-2 text-base outline-none placeholder:text-zinc-400 focus:border-brand-500 md:text-sm dark:border-zinc-800 dark:placeholder:text-zinc-600"
+      placeholder={`在此回复 @${comment.name}…`}
       rows="2"
       maxlength="500"
       required
@@ -88,7 +82,7 @@ const endpoint = isAuthed ? '/app/admin/comments' : `/app/shuoshuo/${postId}/com
     <div class="flex items-center gap-2">
       <button
         type="submit"
-        class="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+        class="min-h-9 rounded-lg bg-brand-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-700"
       >回复</button>
       <button type="button" class="reply-cancel text-xs text-zinc-400 transition-colors hover:text-zinc-600">取消</button>
       <span class="reply-msg text-xs text-red-500"></span>

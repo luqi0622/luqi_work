@@ -1,22 +1,23 @@
 import { TAG_OVERRIDES } from '@/data/tagOverrides';
 
 /**
- * 随笔分类标签的配色方案 —— 青春糖果色系
- * 每个分类一种颜色，用于 PostCard / 文章页 / 筛选栏的 tag chips
+ * 随笔分类标签的配色方案
+ * 统一收束在「科技蓝」色族（brand / sky / indigo / cyan）+ 中性灰，
+ * 避免出现第 4 种主色：全站主色 = 蓝（#2563EB）+ 中性灰 + 琥珀（仅状态标记）。
  */
 export const TAG_STYLES: Record<string, string> = {
   心情随笔:
-    'border-violet-200 bg-violet-50 text-violet-600 dark:border-violet-400/30 dark:bg-violet-400/10 dark:text-violet-300',
+    'border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-400/30 dark:bg-brand-400/10 dark:text-brand-300',
   亲情爱情:
-    'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-400/30 dark:bg-rose-400/10 dark:text-rose-300',
+    'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-300',
   读书观影:
-    'border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300',
+    'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-400/30 dark:bg-indigo-400/10 dark:text-indigo-300',
   梦想奋斗:
-    'border-sky-200 bg-sky-50 text-sky-600 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-300',
+    'border-brand-300 bg-brand-100/70 text-brand-800 dark:border-brand-400/30 dark:bg-brand-400/10 dark:text-brand-300',
   校园青春:
-    'border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300',
+    'border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-400/30 dark:bg-cyan-400/10 dark:text-cyan-300',
   生活日常:
-    'border-teal-200 bg-teal-50 text-teal-600 dark:border-teal-400/30 dark:bg-teal-400/10 dark:text-teal-300',
+    'border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-600/40 dark:bg-zinc-700/20 dark:text-zinc-300',
 };
 
 const FALLBACK =

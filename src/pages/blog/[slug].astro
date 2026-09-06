@@ -97,13 +97,13 @@ const tags = resolveTags(post.id, post.data.tags);
         prev ? (
           <a
             href={`/blog/${prev.id}/`}
-            class="group rounded-xl border border-zinc-200/70 p-4 transition-all hover:-translate-y-0.5 hover:border-rose-300 hover:shadow-sm dark:border-zinc-800/70 dark:hover:border-rose-700"
+            class="group rounded-xl border border-zinc-200/70 p-4 transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-sm dark:border-zinc-800/70 dark:hover:border-brand-700"
           >
             <p class="flex items-center gap-1 text-xs text-zinc-400 dark:text-zinc-500">
               <Icon name="lucide:arrow-left" class="h-3.5 w-3.5" />
               上一篇
             </p>
-            <p class="mt-1.5 text-sm font-medium text-zinc-700 transition-colors group-hover:text-rose-600 dark:text-zinc-300 dark:group-hover:text-rose-400">
+            <p class="mt-1.5 text-sm font-medium text-zinc-700 transition-colors group-hover:text-brand-600 dark:text-zinc-300 dark:group-hover:text-brand-400">
               {prev.data.title}
             </p>
           </a>
@@ -115,13 +115,13 @@ const tags = resolveTags(post.id, post.data.tags);
         next && (
           <a
             href={`/blog/${next.id}/`}
-            class="group rounded-xl border border-zinc-200/70 p-4 text-right transition-all hover:-translate-y-0.5 hover:border-rose-300 hover:shadow-sm dark:border-zinc-800/70 dark:hover:border-rose-700"
+            class="group rounded-xl border border-zinc-200/70 p-4 text-right transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-sm dark:border-zinc-800/70 dark:hover:border-brand-700"
           >
             <p class="flex items-center justify-end gap-1 text-xs text-zinc-400 dark:text-zinc-500">
               下一篇
               <Icon name="lucide:arrow-right" class="h-3.5 w-3.5" />
             </p>
-            <p class="mt-1.5 text-sm font-medium text-zinc-700 transition-colors group-hover:text-rose-600 dark:text-zinc-300 dark:group-hover:text-rose-400">
+            <p class="mt-1.5 text-sm font-medium text-zinc-700 transition-colors group-hover:text-brand-600 dark:text-zinc-300 dark:group-hover:text-brand-400">
               {next.data.title}
             </p>
           </a>

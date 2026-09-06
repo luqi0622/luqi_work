@@ -34,6 +34,133 @@ export interface TagWithCount {
   count: number;
 }
 
+/* ------------------------------------------------------------------ */
+/* 表态（Reactions）：赞 / 踩 / 思考 / 共鸣                              */
+/* ------------------------------------------------------------------ */
+
+/** 允许的表态类型（顺序即展示顺序） */
+export const REACTION_KINDS = ['like', 'dislike', 'think', 'resonate'] as const;
+export type ReactionKind = (typeof REACTION_KINDS)[number];
+
+export const REACTION_META: Record<ReactionKind, { emoji: string; label: string }> = {
+  like: { emoji: '👍', label: '赞' },
+  dislike: { emoji: '👎', label: '踩' },
+  think: { emoji: '💡', label: '思考' },
+  resonate: { emoji: '❤️', label: '共鸣' },
+};
+
+export function isReactionKind(v: unknown): v is ReactionKind {
+  return typeof v === 'string' && (REACTION_KINDS as readonly string[]).includes(v);
+}
+
+/** 建表（幂等，进程内只跑一次） */
+let reactionsReady: Promise<void> | null = null;
+function ensureReactionsTable(): Promise<void> {
+  if (!reactionsReady) {
+    reactionsReady = (async () => {
+      await db.batch(
+        [
+          {
+            sql: `CREATE TABLE IF NOT EXISTS reactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    post_id INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    visitor TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                  )`,
+            args: [],
+          },
+          {
+            sql: 'CREATE UNIQUE INDEX IF NOT EXISTS idx_reactions_unique ON reactions(post_id, kind, visitor)',
+            args: [],
+          },
+          {
+            sql: 'CREATE INDEX IF NOT EXISTS idx_reactions_post ON reactions(post_id)',
+            args: [],
+          },
+        ],
+        'write'
+      );
+    })().catch((e) => {
+      reactionsReady = null;
+      throw e;
+    });
+  }
+  return reactionsReady;
+}
+
+/** 批量取多条说说的表态计数：Map<postId, {like: n, ...}> */
+export async function getReactionsMap(
+  postIds: number[]
+): Promise<Map<number, Record<ReactionKind, number>>> {
+  const out = new Map<number, Record<ReactionKind, number>>();
+  if (postIds.length === 0) return out;
+  await ensureReactionsTable();
+  const rs = await db.execute({
+    sql: `SELECT post_id, kind, COUNT(*) AS n FROM reactions
+          WHERE post_id IN (${postIds.map(() => '?').join(',')})
+          GROUP BY post_id, kind`,
+    args: postIds,
+  });
+  for (const r of rs.rows) {
+    const pid = Number(r.post_id);
+    const kind = String(r.kind) as ReactionKind;
+    const rec = out.get(pid) ?? { like: 0, dislike: 0, think: 0, resonate: 0 };
+    rec[kind] = Number(r.n);
+    out.set(pid, rec);
+  }
+  return out;
+}
+
+/** 取某访客（匿名 vid）已表态的集合：Set<"postId:kind"> */
+export async function getMyReactions(vid: string | undefined): Promise<Set<string>> {
+  if (!vid) return new Set();
+  await ensureReactionsTable();
+  const rs = await db.execute({
+    sql: 'SELECT post_id, kind FROM reactions WHERE visitor = ?',
+    args: [vid],
+  });
+  return new Set(rs.rows.map((r) => `${Number(r.post_id)}:${String(r.kind)}`));
+}
+
+/** 切换表态：同一访客对同一说说的同一表态可反复切换；返回最新状态与计数 */
+export async function toggleReaction(
+  postId: number,
+  kind: ReactionKind,
+  vid: string
+): Promise<{ active: boolean; counts: Record<ReactionKind, number> }> {
+  await ensureReactionsTable();
+  const now = Math.floor(Date.now() / 1000);
+  const existed = await db.execute({
+    sql: 'SELECT id FROM reactions WHERE post_id = ? AND kind = ? AND visitor = ?',
+    args: [postId, kind, vid],
+  });
+  if (existed.rows.length > 0) {
+    await db.execute({
+      sql: 'DELETE FROM reactions WHERE post_id = ? AND kind = ? AND visitor = ?',
+      args: [postId, kind, vid],
+    });
+  } else {
+    // 同一访客对同一说说的「赞/踩」互斥，避免同时点亮
+    if (kind === 'like' || kind === 'dislike') {
+      const opposite = kind === 'like' ? 'dislike' : 'like';
+      await db.execute({
+        sql: 'DELETE FROM reactions WHERE post_id = ? AND kind = ? AND visitor = ?',
+        args: [postId, opposite, vid],
+      });
+    }
+    await db.execute({
+      sql: 'INSERT INTO reactions (post_id, kind, visitor, created_at) VALUES (?, ?, ?, ?)',
+      args: [postId, kind, vid, now],
+    });
+  }
+  const map = await getReactionsMap([postId]);
+  return {
+    active: existed.rows.length === 0,
+    counts: map.get(postId) ?? { like: 0, dislike: 0, think: 0, resonate: 0 },
+  };
+}
+
 interface PostRow {
   id: number;
   t: number;
@@ -244,7 +371,8 @@ export async function addComment(postId: number, input: AddCommentInput): Promis
   const maxId = comments.reduce((m, c) => Math.max(m, c.id ?? 0), 0);
   comments.push({
     id: maxId + 1,
-    name: input.name,
+    // 游客评论一律匿名（前端不再收集昵称）
+    name: (input.name || '匿名').slice(0, 20),
     time: nowBeijing(),
     uin: 0,
     content: input.content,

@@ -47,11 +47,9 @@ export const POST: APIRoute = async ({ params, request }) => {
     return new Response(JSON.stringify({ ok: true }), { headers: { 'content-type': 'application/json' } });
   }
 
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  // 游客评论一律匿名展示（前端已移除昵称输入），后端不再校验昵称
+  const name = '匿名';
   const content = typeof body.content === 'string' ? body.content.trim() : '';
-  if (name.length < 1 || name.length > 20) {
-    return new Response(JSON.stringify({ error: '昵称需 1–20 字' }), { status: 400, headers: { 'content-type': 'application/json' } });
-  }
   if (content.length < 1 || content.length > 500) {
     return new Response(JSON.stringify({ error: '评论需 1–500 字' }), { status: 400, headers: { 'content-type': 'application/json' } });
   }

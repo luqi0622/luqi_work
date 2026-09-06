@@ -15,6 +15,23 @@
   --font-display: 'ZCOOL KuaiLe', 'Noto Sans SC', ui-sans-serif, sans-serif;
   --font-mono:
     ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+  /* --------------------------------------------------------------
+     主色：科技蓝（唯一强调色，核心 #2563EB）
+     搭配中性色 zinc（深灰/墨）与功能性琥珀（仅用于置顶等状态标记），
+     全站主色控制在 3 种以内。
+     -------------------------------------------------------------- */
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-brand-900: #1e3a8a;
+  --color-brand-950: #172554;
 }
 
 html {
@@ -23,40 +40,83 @@ html {
 }
 
 ::selection {
-  background-color: theme(--color-rose-200);
-  color: theme(--color-rose-950);
+  background-color: theme(--color-brand-200);
+  color: theme(--color-brand-950);
 }
 
 .dark ::selection {
-  background-color: theme(--color-rose-500);
+  background-color: theme(--color-brand-700);
   color: white;
 }
 
 /* ------------------------------------------------------------------ */
-/* 青春风点缀：渐变强调 / 筛选 chip 激活态 / 头像渐变描边                  */
+/* 卡片悬停：微妙上浮（translateY）+ 阴影加深，增强可点击感               */
+/* ------------------------------------------------------------------ */
+.card-hover {
+  transition:
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.22s ease,
+    border-color 0.22s ease;
+  will-change: transform;
+}
+
+.card-hover:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 12px 28px -10px rgb(15 23 42 / 0.22),
+    0 4px 10px -4px rgb(15 23 42 / 0.12);
+  border-color: theme(--color-brand-300);
+}
+
+.dark .card-hover:hover {
+  box-shadow:
+    0 12px 30px -10px rgb(0 0 0 / 0.6),
+    0 4px 10px -4px rgb(0 0 0 / 0.45);
+  border-color: theme(--color-brand-800);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-hover,
+  .card-hover:hover {
+    transform: none;
+    transition: box-shadow 0.2s ease;
+  }
+}
+
+/* 分类 Pill 选项卡：横向滚动且隐藏滚动条（移动端友好） */
+.pill-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.pill-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* 品牌强调：渐变文字 / 筛选 chip 激活态                                  */
 /* ------------------------------------------------------------------ */
 .text-gradient {
   background-image: linear-gradient(
     120deg,
-    theme(--color-rose-500),
-    theme(--color-fuchsia-500),
-    theme(--color-violet-500)
+    theme(--color-brand-700),
+    theme(--color-brand-600),
+    theme(--color-brand-400)
   );
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
-/* 筛选 chip 激活态：糖果渐变 */
+/* 筛选 chip 激活态 */
 .chip-active {
   background-image: linear-gradient(
     120deg,
-    theme(--color-rose-500),
-    theme(--color-fuchsia-500)
+    theme(--color-brand-700),
+    theme(--color-brand-500)
   );
   color: white !important;
   border-color: transparent !important;
-  box-shadow: 0 4px 14px rgb(244 63 94 / 0.35);
+  box-shadow: 0 4px 14px rgb(37 99 235 / 0.32);
 }
 
 /* Hero 里的漂浮装饰气泡 */
@@ -129,21 +189,21 @@ html {
 }
 
 .prose a {
-  color: theme(--color-rose-600);
+  color: theme(--color-brand-600);
   text-decoration: underline;
   text-underline-offset: 3px;
-  text-decoration-color: theme(--color-rose-300);
+  text-decoration-color: theme(--color-brand-300);
   transition: text-decoration-color 0.15s ease;
 }
 .dark .prose a {
-  color: theme(--color-violet-400);
-  text-decoration-color: theme(--color-rose-600);
+  color: theme(--color-brand-400);
+  text-decoration-color: theme(--color-brand-600);
 }
 .prose a:hover {
-  text-decoration-color: theme(--color-rose-600);
+  text-decoration-color: theme(--color-brand-600);
 }
 .dark .prose a:hover {
-  text-decoration-color: theme(--color-violet-400);
+  text-decoration-color: theme(--color-brand-400);
 }
 
 .prose strong {
@@ -172,7 +232,7 @@ html {
 }
 
 .prose li::marker {
-  color: theme(--color-violet-400);
+  color: theme(--color-brand-400);
 }
 
 .prose blockquote {
@@ -313,10 +373,10 @@ html {
 }
 
 .markdown-alert.markdown-alert-important {
-  border-color: #8250df;
+  border-color: #1d4ed8;
 }
 .markdown-alert.markdown-alert-important .markdown-alert-title {
-  color: #8250df;
+  color: #1d4ed8;
 }
 
 .markdown-alert.markdown-alert-warning {
@@ -357,10 +417,10 @@ html {
 }
 
 .toc-link.active {
-  color: theme(--color-rose-600);
-  border-left-color: theme(--color-rose-500);
+  color: theme(--color-brand-600);
+  border-left-color: theme(--color-brand-500);
 }
 
 .dark .toc-link.active {
-  color: theme(--color-violet-400);
+  color: theme(--color-brand-400);
 }

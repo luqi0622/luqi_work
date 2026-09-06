@@ -44,7 +44,7 @@ const hasCover = Boolean(project.data.cover);
       >
         <Icon
           name="lucide:app-window"
-          class="h-10 w-10 text-zinc-300 transition-colors group-hover:text-rose-400 dark:text-zinc-700"
+          class="h-10 w-10 text-zinc-300 transition-colors group-hover:text-brand-400 dark:text-zinc-700"
         />
       </a>
     )
@@ -55,7 +55,7 @@ const hasCover = Boolean(project.data.cover);
       <h2 class="text-lg font-semibold tracking-tight">
         <a
           href={project.data.url ?? `#${project.id}`}
-          class="text-zinc-900 transition-colors group-hover:text-rose-600 dark:text-zinc-100 dark:group-hover:text-rose-400"
+          class="text-zinc-900 transition-colors group-hover:text-brand-600 dark:text-zinc-100 dark:group-hover:text-brand-400"
         >
           {project.data.name}
         </a>
@@ -86,7 +86,7 @@ const hasCover = Boolean(project.data.cover);
         project.data.url && (
           <a
             href={project.data.url}
-            class="inline-flex items-center gap-1.5 rounded-md bg-gradient-to-r from-rose-500 to-fuchsia-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-gradient-to-r from-rose-500 to-fuchsia-500 dark:bg-gradient-to-r from-rose-500 to-fuchsia-500 dark:hover:bg-indigo-400"
+            class="inline-flex items-center gap-1.5 rounded-md bg-gradient-to-r from-brand-600 to-brand-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-gradient-to-r from-brand-600 to-brand-500 dark:bg-gradient-to-r from-brand-600 to-brand-500 dark:hover:bg-brand-400"
           >
             <Icon name="lucide:external-link" class="h-4 w-4" />
             访问网站

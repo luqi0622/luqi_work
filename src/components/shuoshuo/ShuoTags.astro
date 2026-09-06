@@ -6,35 +6,39 @@ interface Props {
   current?: string;
 }
 const { tags, current } = Astro.props;
+const total = tags.reduce((s, t) => s + t.count, 0);
 ---
 {
   tags.length > 0 && (
-    <nav class="flex flex-wrap items-center gap-1.5">
-      <a
-        href="/blog"
-        class:list={[
-          'rounded-full px-3 py-1 text-sm transition-colors',
-          !current
-            ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-            : 'text-zinc-500 hover:bg-zinc-200/70 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800/70 dark:hover:text-zinc-200',
-        ]}
-      >
-        全部
-      </a>
-      {tags.map((t) => (
+    <nav class="-mx-4 sm:mx-0" aria-label="随笔分类">
+      <div class="pill-scroll flex gap-2 overflow-x-auto px-4 pb-1 sm:px-0">
         <a
-          href={`/blog?tag=${encodeURIComponent(t.name)}`}
+          href="/blog"
           class:list={[
-            'rounded-full px-3 py-1 text-sm transition-colors',
-            current === t.name
-              ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-              : 'text-zinc-500 hover:bg-zinc-200/70 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800/70 dark:hover:text-zinc-200',
+            'inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm transition-colors',
+            !current
+              ? 'border-brand-600 bg-brand-600 font-medium text-white shadow-sm shadow-brand-600/25'
+              : 'border-zinc-200 text-zinc-500 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-brand-700 dark:hover:bg-brand-500/10 dark:hover:text-brand-300',
           ]}
         >
-          {t.name}
-          <span class="ml-1 text-xs opacity-60">{t.count}</span>
+          全部
+          <span class="text-xs opacity-70">{total}</span>
         </a>
-      ))}
+        {tags.map((t) => (
+          <a
+            href={`/blog?tag=${encodeURIComponent(t.name)}`}
+            class:list={[
+              'inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm transition-colors',
+              current === t.name
+                ? 'border-brand-600 bg-brand-600 font-medium text-white shadow-sm shadow-brand-600/25'
+                : 'border-zinc-200 text-zinc-500 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-brand-700 dark:hover:bg-brand-500/10 dark:hover:text-brand-300',
+            ]}
+          >
+            {t.name}
+            <span class="text-xs opacity-70">{t.count}</span>
+          </a>
+        ))}
+      </div>
     </nav>
   )
 }

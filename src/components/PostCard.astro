@@ -23,14 +23,14 @@ const tags = resolveTags(post.id, post.data.tags);
 ---
 
 <article
-  class="blog-item group relative overflow-hidden rounded-2xl border border-zinc-200/70 bg-white p-5 transition-all duration-300 hover:-translate-y-1 hover:border-rose-300 hover:shadow-lg hover:shadow-rose-500/10 sm:p-6 dark:border-zinc-800/70 dark:bg-zinc-900 dark:hover:border-rose-500/40 dark:hover:shadow-rose-500/5"
+  class="blog-item group relative overflow-hidden rounded-2xl border border-zinc-200/70 bg-white p-5 transition-all duration-300 hover:-translate-y-1 hover:border-brand-300 hover:shadow-lg hover:shadow-brand-500/10 sm:p-6 dark:border-zinc-800/70 dark:bg-zinc-900 dark:hover:border-brand-500/40 dark:hover:shadow-brand-500/5"
   data-tags={tags.join(',')}
   data-title={post.data.title.toLowerCase()}
   data-desc={post.data.description.toLowerCase()}
 >
-  <!-- 悬停时从顶部滑入的糖果色渐变条 -->
+  <!-- 悬停时从顶部滑入的品牌色渐变条 -->
   <span
-    class="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-rose-500 via-fuchsia-500 to-violet-500 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+    class="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-brand-700 via-brand-500 to-brand-300 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
     aria-hidden="true"
   ></span>
 
@@ -46,7 +46,7 @@ const tags = resolveTags(post.id, post.data.tags);
   <h2 class="mt-2 font-display text-lg tracking-tight sm:text-xl">
     <a
       href={`/blog/${post.id}/`}
-      class="text-zinc-900 transition-colors group-hover:text-rose-600 dark:text-zinc-100 dark:group-hover:text-rose-400"
+      class="text-zinc-900 transition-colors group-hover:text-brand-600 dark:text-zinc-100 dark:group-hover:text-brand-400"
     >
       {post.data.title}
     </a>
