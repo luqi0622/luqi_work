@@ -7,10 +7,14 @@ import ShuoMiniCard from '@/components/shuoshuo/ShuoMiniCard.astro';
 import ProjectCard from '@/components/ProjectCard.astro';
 import SocialLinks from '@/components/SocialLinks.astro';
 import { Icon } from 'astro-icon/components';
-import { listLatestPosts, getPostTagsMap } from '@/lib/queries';
+import { listLatestPosts, getPostTagsMap, getReactionsMap } from '@/lib/queries';
 
 // 首页「最新随笔」直接调用随笔栏目（Turso DB）中创建时间最新的 4 条说说，内容与随笔栏目实时同步
-const [latest, latestTagMap] = await Promise.all([listLatestPosts(4), getPostTagsMap()]);
+const latest = await listLatestPosts(4);
+const [latestTagMap, reactionsMap] = await Promise.all([
+  getPostTagsMap(),
+  getReactionsMap(latest.map((p) => p.id)),
+]);
 
 const projects = (await getCollection('projects'))
   .filter((p) => p.data.featured)
@@ -107,7 +111,7 @@ const projects = (await getCollection('projects'))
     </div>
 
     <div class="grid gap-4 sm:grid-cols-2">
-      {latest.map((post) => <ShuoMiniCard post={post} tags={latestTagMap.get(post.id) ?? []} />)}
+      {latest.map((post) => <ShuoMiniCard post={post} tags={latestTagMap.get(post.id) ?? []} reactions={reactionsMap.get(post.id)} />)}
     </div>
   </section>
 
