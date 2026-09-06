@@ -164,7 +164,7 @@ const currentPath = Astro.url.pathname;
   async function renderAuth() {
     if (!authArea) return;
     try {
-      const res = await fetch('/api/me');
+      const res = await fetch('/app/me');
       const data = await res.json().catch(() => ({ authed: false }));
       if (data.authed) {
         authArea.innerHTML = '';
@@ -178,7 +178,7 @@ const currentPath = Astro.url.pathname;
           'ml-2 text-sm text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200';
         logout.textContent = '退出';
         logout.addEventListener('click', async () => {
-          await fetch('/api/logout', { method: 'POST' });
+          await fetch('/app/logout', { method: 'POST' });
           location.reload();
         });
         authArea.appendChild(badge);
@@ -211,7 +211,7 @@ const currentPath = Astro.url.pathname;
     loginSubmit.disabled = true;
     loginMsg.textContent = '';
     try {
-      const res = await fetch('/api/login', {
+      const res = await fetch('/app/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ password: pw }),

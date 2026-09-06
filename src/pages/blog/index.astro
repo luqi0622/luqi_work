@@ -93,7 +93,7 @@ const isAuthed = checkAuth(Astro.cookies.get('session')?.value, import.meta.env.
       if (!content) return;
       btn.disabled = true;
       try {
-        const res = await fetch('/api/admin/posts', { method: 'POST', headers: CSRF, body: JSON.stringify({ content }) });
+        const res = await fetch('/app/admin/posts', { method: 'POST', headers: CSRF, body: JSON.stringify({ content }) });
         const data = await res.json().catch(() => ({}));
         if (res.ok && data.ok) { location.reload(); return; }
         msg.textContent = data.error || '发布失败';
@@ -160,7 +160,7 @@ const isAuthed = checkAuth(Astro.cookies.get('session')?.value, import.meta.env.
     const postId = Number(btn.dataset.postId);
     const commentId = Number(btn.dataset.commentId);
     try {
-      const res = await fetch('/api/admin/comments', {
+      const res = await fetch('/app/admin/comments', {
         method: 'DELETE',
         headers: CSRF,
         body: JSON.stringify({ postId, commentId }),
@@ -199,7 +199,7 @@ const isAuthed = checkAuth(Astro.cookies.get('session')?.value, import.meta.env.
       if (!content) { msg.textContent = '内容不能为空'; return; }
       editSave.disabled = true;
       try {
-        const res = await fetch(`/api/admin/posts/${postId}`, { method: 'PATCH', headers: CSRF, body: JSON.stringify({ content }) });
+        const res = await fetch(`/app/admin/posts/${postId}`, { method: 'PATCH', headers: CSRF, body: JSON.stringify({ content }) });
         const data = await res.json().catch(() => ({}));
         if (res.ok && data.ok) { location.reload(); return; }
         msg.textContent = data.error || '保存失败';
@@ -214,7 +214,7 @@ const isAuthed = checkAuth(Astro.cookies.get('session')?.value, import.meta.env.
       const pinned = pinBtn.dataset.pinned === '1' ? 0 : 1;
       closeMenu(pinBtn);
       try {
-        const res = await fetch(`/api/admin/posts/${postId}`, { method: 'PATCH', headers: CSRF, body: JSON.stringify({ pinned }) });
+        const res = await fetch(`/app/admin/posts/${postId}`, { method: 'PATCH', headers: CSRF, body: JSON.stringify({ pinned }) });
         const data = await res.json().catch(() => ({}));
         if (res.ok && data.ok) { location.reload(); }
         else alert(data.error || '操作失败');
@@ -228,7 +228,7 @@ const isAuthed = checkAuth(Astro.cookies.get('session')?.value, import.meta.env.
       closeMenu(delBtn);
       if (!confirm('确定删除这条随笔？')) return;
       try {
-        const res = await fetch(`/api/admin/posts/${postId}`, { method: 'DELETE', headers: CSRF });
+        const res = await fetch(`/app/admin/posts/${postId}`, { method: 'DELETE', headers: CSRF });
         const data = await res.json().catch(() => ({}));
         if (res.ok && data.ok) { location.reload(); }
         else alert(data.error || '删除失败');
@@ -292,7 +292,7 @@ const isAuthed = checkAuth(Astro.cookies.get('session')?.value, import.meta.env.
   document.getElementById('tag-modal-save')?.addEventListener('click', async () => {
     if (modalPostId == null) return;
     try {
-      const res = await fetch(`/api/admin/posts/${modalPostId}`, {
+      const res = await fetch(`/app/admin/posts/${modalPostId}`, {
         method: 'PATCH',
         headers: CSRF,
         body: JSON.stringify({ tagNames: modalSelected }),

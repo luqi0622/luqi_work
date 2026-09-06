@@ -13,7 +13,7 @@ const { comment, childrenMap, postId, isAuthed, depth } = Astro.props;
 const kids = childrenMap.get(comment.id) ?? [];
 const MAX_DEPTH = 4;
 const showChildren = depth < MAX_DEPTH;
-const endpoint = isAuthed ? '/api/admin/comments' : `/api/shuoshuo/${postId}/comments`;
+const endpoint = isAuthed ? '/app/admin/comments' : `/app/shuoshuo/${postId}/comments`;
 ---
 <li class="relative" data-comment-id={comment.id}>
   <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">

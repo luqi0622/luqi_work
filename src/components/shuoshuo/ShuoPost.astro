@@ -21,7 +21,7 @@ for (const c of post.comments) {
 }
 const roots = post.comments.filter((c) => c.parentId == null || !childrenMap.has(c.parentId));
 const hasContent = post.content.trim().length > 0;
-const commentEndpoint = isAuthed ? '/api/admin/comments' : `/api/shuoshuo/${post.id}/comments`;
+const commentEndpoint = isAuthed ? '/app/admin/comments' : `/app/shuoshuo/${post.id}/comments`;
 ---
 <article class="relative pb-10 pl-8" data-post-id={post.id}>
   <!-- 时间线节点 -->

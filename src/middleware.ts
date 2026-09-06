@@ -1,11 +1,11 @@
 import { defineMiddleware } from 'astro:middleware';
 import { verifySessionToken } from './lib/auth';
 
-/** 保护 /admin（除登录页）与 /api/admin/* */
+/** 保护 /admin（除登录页）与 /app/admin/* */
 export const onRequest = defineMiddleware((context, next) => {
   const path = context.url.pathname;
   const isAdminPage = path.startsWith('/admin') && path !== '/admin/login';
-  const isAdminApi = path.startsWith('/api/admin');
+  const isAdminApi = path.startsWith('/app/admin');
   if (!isAdminPage && !isAdminApi) return next();
 
   const token = context.cookies.get('session')?.value ?? '';
