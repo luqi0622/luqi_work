@@ -1,5 +1,6 @@
 import { db } from './db';
 import { nowBeijing } from '../utils/time';
+import { classifyText } from './classify';
 
 export type CommentRole = 'guest' | 'admin';
 
@@ -223,6 +224,15 @@ export async function listAllPosts(): Promise<Post[]> {
   return rs.rows.map((r) => rowToPost(r as unknown as PostRow));
 }
 
+/** 最新的 n 条说说（按创建时间倒序，忽略置顶），用于首页「最新随笔」 */
+export async function listLatestPosts(n: number): Promise<Post[]> {
+  const rs = await db.execute({
+    sql: `SELECT ${POST_COLUMNS} FROM posts p WHERE p.deleted_at IS NULL ORDER BY p.t DESC LIMIT ?`,
+    args: [n],
+  });
+  return rs.rows.map((r) => rowToPost(r as unknown as PostRow));
+}
+
 export async function getPostTags(postId: number): Promise<string[]> {
   const rs = await db.execute({
     sql: `SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tag_id WHERE pt.post_id = ? ORDER BY t.name`,
@@ -330,6 +340,31 @@ export async function deleteTag(id: number): Promise<void> {
     ],
     'write'
   );
+}
+
+/** 取全部未删除说说的 id + 正文（用于批量自动归类） */
+async function getAllPostTexts(): Promise<{ id: number; content: string }[]> {
+  const rs = await db.execute({
+    sql: `SELECT id, content FROM posts WHERE deleted_at IS NULL`,
+    args: [],
+  });
+  return rs.rows.map((r) => ({ id: Number(r.id), content: String(r.content || '') }));
+}
+
+/**
+ * 给全部说说按关键词自动归类（幂等）：每条说说打一个主分类标签。
+ * 与 scripts/import-qq-shuoshuo.mjs 使用同一套分类规则，保证随笔栏目与历史导入一致。
+ * 返回统计信息，便于后台确认归类分布。
+ */
+export async function autoTagAllPosts(): Promise<{ total: number; stat: Record<string, number> }> {
+  const posts = await getAllPostTexts();
+  const stat: Record<string, number> = {};
+  for (const p of posts) {
+    const cat = classifyText(p.content);
+    stat[cat] = (stat[cat] ?? 0) + 1;
+    await setPostTags(p.id, [cat]);
+  }
+  return { total: posts.length, stat };
 }
 
 /** 取单条原始记录（含 comments 文本），找不到返回 null */

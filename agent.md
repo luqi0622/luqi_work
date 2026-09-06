@@ -70,7 +70,7 @@ luqi_work/
 │   ├── middleware.ts            ★ 保护 /api/admin/*（未登录返回 401）
 │   ├── pages/                   ← index / blog/index / blog/[slug] /
 │   │                             projects / about / tools / rss.xml / 404
-│   │   └── api/                 ← login / logout / me
+│   │   └── app/                 ← login / logout / me（⚠️ 后端统一用 /app，Vercel 保留 /api 会 404）
 │   │       ├── shuoshuo/[id]/comments.ts   ← 游客评论+楼中楼
 │   │       └── admin/           ← posts / comments / tags（博主专用）
 │   └── styles/global.css        ← Tailwind v4 主题、字体、文章排版、动效
@@ -220,13 +220,13 @@ Vercel 控制台的环境变量值默认遮成 `••••`，**复制按钮�
 
 ---
 
-## 8. 风格设计要点（青春糖果色）
+## 8. 风格设计要点（科技蓝 · 高质感极简）
 
-- 配色基调：玫瑰粉 → 紫罗兰 → 天蓝渐变（`from-rose-500 to-fuchsia-500`）
+- 配色基调：**科技蓝主色 `#2563EB`（`--color-brand-*` 色族，核心 `brand-600`）**，搭配中性色 `zinc`（深灰/墨）与功能性琥珀（仅置顶等状态标记），全站主色 ≤ 3 种。配色集中定义在 `src/styles/global.css` 的 `@theme` 块，没有 `tailwind.config.js`。
 - 标题/品牌字体：`font-display`（站酷快乐体），正文：思源黑体
-- 圆角大（`rounded-2xl`/`rounded-3xl`）、卡片 hover 上浮 + 柔和阴影 + 顶部滑出渐变条
+- 圆角大（`rounded-2xl`/`rounded-3xl`）、卡片 hover 上浮（`translateY(-3px)` + 阴影加深，`.card-hover` 工具类，详见 `global.css`）
 - Hero 背景有缓慢漂浮的彩色光斑（`animate-float-slow`）
-- 切换主题/改配色时全局搜 `rose-` / `fuchsia-` / `violet-` 定位，曾整体从 `indigo-*` 替换过来。
+- 切换主题/改配色时全局搜 `brand-` 定位（主色族），避免引入第 4 种主色；不要再引入 `rose-/fuchsia-/violet-/indigo-` 等旧糖果色。
 
 ---
 
