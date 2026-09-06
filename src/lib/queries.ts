@@ -205,15 +205,23 @@ function rowToPost(r: PostRow): Post {
 
 const POST_COLUMNS = 'p.id, p.t, p.content, p.pics, p.rt, p.comments, p.pinned, p.deleted_at';
 
-/** 前台列表：正常说说，置顶在前，其余按时间倒序；可按标签筛选 */
-export async function listPosts(opts: { tag?: string } = {}): Promise<Post[]> {
+/** 前台列表：正常说说，可按标签筛选、按时间/热度排序 */
+export async function listPosts(
+  opts: { tag?: string; sort?: 'time' | 'hot' } = {}
+): Promise<Post[]> {
+  const sort = opts.sort === 'hot' ? 'hot' : 'time';
   let sql = `SELECT ${POST_COLUMNS} FROM posts p WHERE p.deleted_at IS NULL`;
   const args: unknown[] = [];
   if (opts.tag) {
     sql += ` AND p.id IN (SELECT pt.post_id FROM post_tags pt JOIN tags t ON t.id = pt.tag_id WHERE t.name = ?)`;
     args.push(opts.tag);
   }
-  sql += ` ORDER BY p.pinned DESC, p.t DESC`;
+  if (sort === 'hot') {
+    // 最热：按表态总数降序，同分按时间倒序（忽略置顶，让热门内容自然上浮）
+    sql += ` ORDER BY (SELECT COUNT(*) FROM reactions r WHERE r.post_id = p.id) DESC, p.t DESC`;
+  } else {
+    sql += ` ORDER BY p.pinned DESC, p.t DESC`;
+  }
   const rs = await db.execute({ sql, args: args as never });
   return rs.rows.map((r) => rowToPost(r as unknown as PostRow));
 }

@@ -4,16 +4,18 @@ import type { TagWithCount } from '@/lib/queries';
 interface Props {
   tags: TagWithCount[];
   current?: string;
+  sort?: 'time' | 'hot';
 }
-const { tags, current } = Astro.props;
+const { tags, current, sort } = Astro.props;
 const total = tags.reduce((s, t) => s + t.count, 0);
+const sortQS = sort === 'hot' ? '?sort=hot' : '';
 ---
 {
   tags.length > 0 && (
     <nav class="-mx-4 sm:mx-0" aria-label="随笔分类">
       <div class="pill-scroll flex gap-2 overflow-x-auto px-4 pb-1 sm:px-0">
         <a
-          href="/blog"
+          href={`/blog${sortQS}`}
           class:list={[
             'inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm transition-colors',
             !current
@@ -26,7 +28,7 @@ const total = tags.reduce((s, t) => s + t.count, 0);
         </a>
         {tags.map((t) => (
           <a
-            href={`/blog?tag=${encodeURIComponent(t.name)}`}
+            href={`/blog?tag=${encodeURIComponent(t.name)}${sort === 'hot' ? '&sort=hot' : ''}`}
             class:list={[
               'inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm transition-colors',
               current === t.name
