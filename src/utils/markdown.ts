@@ -25,14 +25,15 @@ function safeUrl(raw: string): string | null {
 }
 
 /** 行内语法：代码 → 图片 → 链接 → 粗体/斜体/删除线 → 裸链接自动识别 */
-function renderInline(input: string): string {
+function renderInline(raw: string): string {
   const stash: string[] = [];
   const keep = (html: string) => {
     stash.push(html);
     return `\u0000${stash.length - 1}\u0000`;
   };
 
-  let s = input;
+  // 先转义，再做语法替换 —— 保证输出安全
+  let s = escapeHtml(raw);
 
   // 行内代码
   s = s.replace(/`([^`]+)`/g, (_, code: string) => keep(`<code>${code}</code>`));
@@ -72,7 +73,8 @@ function renderInline(input: string): string {
 /** 块级语法 + 段落 */
 export function renderMarkdown(src: string): string {
   if (!src) return '';
-  const lines = escapeHtml(src.replace(/\r\n?/g, '\n')).split('\n');
+  // 注意：块级判定必须在「未转义」的原文上做（否则 > 会变成 &gt; 而识别不到引用）
+  const lines = src.replace(/\r\n?/g, '\n').split('\n');
   const out: string[] = [];
   let i = 0;
 
@@ -97,7 +99,7 @@ export function renderMarkdown(src: string): string {
       while (i < lines.length && !/^\s*```/.test(lines[i])) buf.push(lines[i++]);
       i++; // 跳过收尾 ```
       const cls = lang ? ` class="language-${lang.replace(/[^\w-]/g, '')}"` : '';
-      out.push(`<pre><code${cls}>${buf.join('\n')}</code></pre>`);
+      out.push(`<pre><code${cls}>${escapeHtml(buf.join('\n'))}</code></pre>`);
       continue;
     }
 
