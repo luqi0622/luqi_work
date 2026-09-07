@@ -10,6 +10,7 @@ import ShuoBackTop from '@/components/shuoshuo/ShuoBackTop.astro';
 import {
   listPosts,
   listTags,
+  listYearCounts,
   getPostTagsMap,
   getReactionsMap,
   getMyReactions,
@@ -21,11 +22,16 @@ const tag = Astro.url.searchParams.get('tag') ?? undefined;
 const sort = Astro.url.searchParams.get('sort') === 'hot' ? 'hot' : 'time';
 const isAuthed = checkAuth(Astro.cookies.get('session')?.value, import.meta.env.SESSION_SECRET);
 // 博主登录时列表包含私密说说（卡片右上角会标注私密），游客永远看不到
-const [posts, tags, tagMap] = await Promise.all([
-  listPosts({ tag, sort, isAuthed }),
+// 首屏只取最近 30 条（多取 1 条用于判断是否还有更早内容），其余按年份按需加载
+const PAGE_SIZE = 30;
+const [rows, tags, tagMap, yearCounts] = await Promise.all([
+  listPosts({ tag, sort, isAuthed, limit: PAGE_SIZE + 1 }),
   listTags(),
   getPostTagsMap(),
+  listYearCounts({ tag, isAuthed }),
 ]);
+const hasMore = rows.length > PAGE_SIZE;
+const posts = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
 
 // 表态：匿名访客标识存在 vid cookie 中（随机串，非个人信息）
 const vid = Astro.cookies.get('vid')?.value;
@@ -45,6 +51,12 @@ for (const p of normalPosts) {
   yearMap.get(y)!.push(p);
 }
 const years = [...yearMap.keys()].sort((a, b) => b - a);
+// 时光轴展示全量年份（含未加载的），点击未加载年份时会自动续加载
+const timelineYears = yearCounts.map((y) => y.year);
+const yearCountMap = new Map(yearCounts.map((y) => [y.year, y.count]));
+// 下一页游标：已加载「非置顶」内容里最早一条的时间（置顶不参与年份分组，不能拿来当游标）
+const nextBefore = normalPosts.length ? Math.min(...normalPosts.map((p) => p.t)) : 0;
+const canLoadMore = hasMore && nextBefore > 0;
 ---
 <BaseLayout
   title="感悟随笔"
@@ -99,9 +111,9 @@ const years = [...yearMap.keys()].sort((a, b) => b - a);
       </div>
     </div>
 
-    <ShuoYearTimeline years={years} />
+    <ShuoYearTimeline years={timelineYears} counts={yearCountMap} />
 
-    <div class="mt-2 border-l border-zinc-200 pl-5 dark:border-zinc-800">
+    <div id="shuo-list" class="mt-2 border-l border-zinc-200 pl-5 dark:border-zinc-800">
       {
         pinnedPosts.length > 0 && (
           <div class="mb-4">
@@ -137,6 +149,28 @@ const years = [...yearMap.keys()].sort((a, b) => b - a);
     </div>
 
     {
+      canLoadMore && (
+        <div class="mt-6 flex justify-center">
+          <button
+            id="load-more"
+            type="button"
+            class="inline-flex min-h-10 items-center gap-2 rounded-full border border-zinc-200 bg-white px-5 py-2 text-sm text-zinc-600 transition-colors hover:border-brand-300 hover:text-brand-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-brand-700 dark:hover:text-brand-300"
+            data-before={String(nextBefore)}
+            data-more="1"
+            data-limit={String(PAGE_SIZE)}
+            data-tag={tag ?? ''}
+            data-sort={sort}
+          >
+            <span class="load-more-text">加载更早随笔</span>
+          </button>
+        </div>
+      )
+    }
+    <p id="load-end" class="mt-6 hidden text-center text-xs text-zinc-400 dark:text-zinc-600">
+      —— 已经翻到最早的一条 ——
+    </p>
+
+    {
       posts.length === 0 && (
         <p class="py-20 text-center text-sm text-zinc-400 dark:text-zinc-600">暂无说说</p>
       )
@@ -146,3 +180,105 @@ const years = [...yearMap.keys()].sort((a, b) => b - a);
 
 <ShuoBackTop />
 <ShuoInteractions tags={tags} />
+
+<script is:inline>
+  // 按需加载更早的说说：向 /app/shuoshuo/more 取一段 HTML 片段，按年份合并进列表
+  (function () {
+    const btn = document.getElementById('load-more');
+    const list = document.getElementById('shuo-list');
+    const endTip = document.getElementById('load-end');
+    let loading = false;
+
+    /** 请求一段片段并合并进列表 */
+    async function fetchChunk(params) {
+      const qs = new URLSearchParams(params);
+      if (btn && btn.dataset.tag) qs.set('tag', btn.dataset.tag);
+      const res = await fetch('/app/shuoshuo/more?' + qs.toString(), {
+        headers: { 'x-requested-with': 'fetch' },
+      });
+      if (!res.ok) throw new Error('bad status');
+      const html = await res.text();
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      const chunk = tmp.querySelector('.more-chunk');
+      if (!chunk) throw new Error('bad fragment');
+
+      const added = [];
+      Array.from(chunk.querySelectorAll(':scope > section')).forEach(function (sec) {
+        const y = sec.dataset.year;
+        let exist = list.querySelector('section[data-year="' + y + '"]');
+        if (!exist) {
+          exist = sec;
+          list.appendChild(sec);
+        }
+        Array.from(sec.children).forEach(function (el) {
+          if (el.tagName === 'H2') return; // 年份标题不重复插入
+          const pid = el.id;
+          if (pid && document.getElementById(pid)) return; // 已存在则跳过（去重）
+          exist.appendChild(el);
+        });
+        if (sec.parentElement === list && added.indexOf(Number(y)) === -1) added.push(Number(y));
+      });
+
+      // 保持年份降序（置顶区块不参与，始终在最前）
+      Array.from(list.querySelectorAll('section[data-year]'))
+        .sort(function (a, b) { return Number(b.dataset.year) - Number(a.dataset.year); })
+        .forEach(function (s) { list.appendChild(s); });
+
+      if (added.length) document.dispatchEvent(new CustomEvent('shuo:newyears', { detail: added }));
+      return { next: chunk.dataset.next || '0', more: chunk.dataset.more || '0' };
+    }
+
+    async function loadMore() {
+      if (!btn || !list || loading) return false;
+      if (btn.dataset.more === '0' || !btn.dataset.before || btn.dataset.before === '0') {
+        finish();
+        return false;
+      }
+      loading = true;
+      const textEl = btn.querySelector('.load-more-text');
+      const oldText = textEl ? textEl.textContent : '';
+      if (textEl) textEl.textContent = '加载中…';
+      btn.disabled = true;
+      try {
+        const r = await fetchChunk({
+          before: btn.dataset.before || '0',
+          limit: btn.dataset.limit || '30',
+          sort: btn.dataset.sort || 'time',
+        });
+        btn.dataset.before = r.next;
+        btn.dataset.more = r.more;
+        if (r.more === '0' || r.next === '0') finish();
+        else if (textEl) textEl.textContent = oldText || '加载更早随笔';
+        return true;
+      } catch (e) {
+        if (textEl) textEl.textContent = '加载失败，点击重试';
+        return false;
+      } finally {
+        loading = false;
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    /** 全部加载完：隐藏按钮，露出到底提示 */
+    function finish() {
+      if (endTip) endTip.classList.remove('hidden');
+      if (btn) btn.remove();
+    }
+
+    /** 时光轴跳到尚未加载的年份：按年直接取一次 */
+    async function ensureYear(y) {
+      if (document.getElementById('year-' + y)) return true;
+      try {
+        await fetchChunk({ year: String(y), sort: (btn && btn.dataset.sort) || 'time' });
+      } catch (e) {
+        return false;
+      }
+      return !!document.getElementById('year-' + y);
+    }
+
+    window.__shuoLoadMore = loadMore;
+    window.__shuoEnsureYear = ensureYear;
+    if (btn) btn.addEventListener('click', function () { loadMore(); });
+  })();
+</script>

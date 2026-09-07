@@ -212,7 +212,17 @@ function ensurePostsTable(): Promise<void> {
 
 /** 前台列表：正常说说，可按标签筛选、按时间/热度排序；未登录时隐藏私密说说 */
 export async function listPosts(
-  opts: { tag?: string; sort?: 'time' | 'hot'; isAuthed?: boolean } = {}
+  opts: {
+    tag?: string;
+    sort?: 'time' | 'hot';
+    isAuthed?: boolean;
+    /** 取前 n 条（配合 before 做游标分页） */
+    limit?: number;
+    /** 游标：只取 t < before 的更早期说说 */
+    before?: number;
+    /** 直接取某个自然年（北京时间） */
+    year?: number;
+  } = {}
 ): Promise<Post[]> {
   await ensurePostsTable();
   const sort = opts.sort === 'hot' ? 'hot' : 'time';
@@ -225,14 +235,50 @@ export async function listPosts(
     sql += ` AND p.id IN (SELECT pt.post_id FROM post_tags pt JOIN tags t ON t.id = pt.tag_id WHERE t.name = ?)`;
     args.push(opts.tag);
   }
+  if (Number.isFinite(opts.before) && (opts.before as number) > 0) {
+    sql += ` AND p.t < ?`;
+    args.push(opts.before);
+  }
+  // 直接取某一自然年（按北京时间切分，中国无夏令时，固定 +8h）
+  if (Number.isFinite(opts.year) && (opts.year as number) > 1900) {
+    const y = opts.year as number;
+    const start = Math.floor(Date.UTC(y, 0, 1, 0, 0, 0) / 1000) - 8 * 3600;
+    const end = Math.floor(Date.UTC(y + 1, 0, 1, 0, 0, 0) / 1000) - 8 * 3600;
+    sql += ` AND p.t >= ? AND p.t < ?`;
+    args.push(start, end);
+  }
   if (sort === 'hot') {
     // 最热：置顶优先，再按表态总数降序，同分按时间倒序（让博主置顶内容在热度视图仍靠前）
     sql += ` ORDER BY p.pinned DESC, (SELECT COUNT(*) FROM reactions r WHERE r.post_id = p.id) DESC, p.t DESC`;
   } else {
     sql += ` ORDER BY p.pinned DESC, p.t DESC`;
   }
+  if (opts.limit && opts.limit > 0) {
+    sql += ` LIMIT ?`;
+    args.push(opts.limit);
+  }
   const rs = await db.execute({ sql, args: args as never });
   return rs.rows.map((r) => rowToPost(r as unknown as PostRow));
+}
+
+/** 各年份的说说数量（驱动迷你时光轴，按年份降序；不含置顶与私密） */
+export async function listYearCounts(
+  opts: { tag?: string; isAuthed?: boolean } = {}
+): Promise<{ year: number; count: number }[]> {
+  await ensurePostsTable();
+  let sql = `SELECT CAST(strftime('%Y', p.t, 'unixepoch', '+8 hours') AS INTEGER) AS y, COUNT(*) AS n
+             FROM posts p WHERE p.deleted_at IS NULL AND COALESCE(p.pinned, 0) = 0`;
+  const args: unknown[] = [];
+  if (!opts.isAuthed) {
+    sql += ` AND (p.is_private IS NULL OR p.is_private = 0)`;
+  }
+  if (opts.tag) {
+    sql += ` AND p.id IN (SELECT pt.post_id FROM post_tags pt JOIN tags t ON t.id = pt.tag_id WHERE t.name = ?)`;
+    args.push(opts.tag);
+  }
+  sql += ` GROUP BY y ORDER BY y DESC`;
+  const rs = await db.execute({ sql, args: args as never });
+  return rs.rows.map((r) => ({ year: Number(r.y), count: Number(r.n) }));
 }
 
 /** 后台列表：全部（含已删除），按时间倒序 */

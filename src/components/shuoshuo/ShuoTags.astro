@@ -9,38 +9,82 @@ interface Props {
 const { tags, current, sort } = Astro.props;
 const total = tags.reduce((s, t) => s + t.count, 0);
 const sortQS = sort === 'hot' ? '?sort=hot' : '';
+const PILL =
+  'inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm transition-colors';
+const PILL_ON = 'border-brand-600 bg-brand-600 font-medium text-white shadow-sm shadow-brand-600/25';
+const PILL_OFF =
+  'border-zinc-200 text-zinc-500 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-brand-700 dark:hover:bg-brand-500/10 dark:hover:text-brand-300';
 ---
+
 {
   tags.length > 0 && (
     <nav class="-mx-4 sm:mx-0" aria-label="随笔分类">
-      <div class="pill-scroll flex gap-2 overflow-x-auto px-4 pb-1 sm:px-0">
-        <a
-          href={`/blog${sortQS}`}
-          class:list={[
-            'inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm transition-colors',
-            !current
-              ? 'border-brand-600 bg-brand-600 font-medium text-white shadow-sm shadow-brand-600/25'
-              : 'border-zinc-200 text-zinc-500 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-brand-700 dark:hover:bg-brand-500/10 dark:hover:text-brand-300',
-          ]}
-        >
+      {/* 分类过多时换行展示（不再被一行裁掉），超过两行可折叠 */}
+      <div
+        id="tag-pills"
+        class="flex flex-wrap gap-2 overflow-hidden px-4 pb-1 transition-[max-height] duration-200 sm:px-0"
+        style="max-height: 5.25rem;"
+      >
+        <a href={`/blog${sortQS}`} class:list={[PILL, current ? PILL_OFF : PILL_ON]}>
           全部
           <span class="text-xs opacity-70">{total}</span>
         </a>
         {tags.map((t) => (
           <a
             href={`/blog?tag=${encodeURIComponent(t.name)}${sort === 'hot' ? '&sort=hot' : ''}`}
-            class:list={[
-              'inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm transition-colors',
-              current === t.name
-                ? 'border-brand-600 bg-brand-600 font-medium text-white shadow-sm shadow-brand-600/25'
-                : 'border-zinc-200 text-zinc-500 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-brand-700 dark:hover:bg-brand-500/10 dark:hover:text-brand-300',
-            ]}
+            class:list={[PILL, current === t.name ? PILL_ON : PILL_OFF]}
           >
             {t.name}
             <span class="text-xs opacity-70">{t.count}</span>
           </a>
         ))}
       </div>
+      <div class="mt-1.5 px-4 sm:px-0">
+        <button
+          id="tag-more"
+          type="button"
+          data-open="0"
+          class="hidden text-xs text-brand-600 transition-colors hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300"
+        >
+          展开全部分类 ↓
+        </button>
+      </div>
     </nav>
   )
 }
+
+<script is:inline>
+  (function () {
+    const box = document.getElementById('tag-pills');
+    const more = document.getElementById('tag-more');
+    if (!box || !more) return;
+    const COLLAPSED = '5.25rem';
+
+    function sync() {
+      if (more.dataset.open === '1') {
+        box.style.maxHeight = 'none';
+        return;
+      }
+      box.style.maxHeight = COLLAPSED;
+      // 折叠后内容确实放不下才显示「展开」
+      const overflowing = box.scrollHeight > box.clientHeight + 2;
+      more.classList.toggle('hidden', !overflowing);
+    }
+
+    more.addEventListener('click', () => {
+      if (more.dataset.open === '1') {
+        more.dataset.open = '0';
+        more.textContent = '展开全部分类 ↓';
+      } else {
+        more.dataset.open = '1';
+        more.textContent = '收起分类 ↑';
+      }
+      sync();
+    });
+
+    window.addEventListener('resize', sync);
+    sync();
+    // 字体加载完成后高度可能变化，再校一次
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(sync);
+  })();
+</script>

@@ -13,6 +13,7 @@ import {
   listTags,
 } from '@/lib/queries';
 import { checkAuth } from '@/lib/auth';
+import { stripMarkdown } from '@/utils/markdown';
 
 const rawId = Astro.params.id;
 const id = rawId ? Number(rawId) : NaN;
@@ -63,7 +64,7 @@ if (valid) {
       pageTitle = '私密说说';
       description = '这条说说已设为私密，仅博主登录后可见。';
     } else {
-      const text = post.content.trim();
+      const text = stripMarkdown(post.content).trim();
       const firstLine = text ? text.split('\n')[0].trim() : '';
       pageTitle = firstLine ? (firstLine.length > 30 ? firstLine.slice(0, 30) + '…' : firstLine) : '一条说说';
       description = text

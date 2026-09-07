@@ -1,5 +1,6 @@
 ---
 import { formatBeijing } from '@/utils/time';
+import { stripMarkdown } from '@/utils/markdown';
 import type { Post } from '@/lib/queries';
 
 interface Props {
@@ -8,7 +9,7 @@ interface Props {
   reactions?: Record<string, number>;
 }
 const { post, tags = [], reactions } = Astro.props;
-const content = post.content.trim();
+const content = stripMarkdown(post.content).trim();
 const preview = content.length > 120 ? content.slice(0, 120) + '…' : content;
 const dateStr = formatBeijing(post.t);
 

@@ -424,3 +424,56 @@ html {
 .dark .toc-link.active {
   color: theme(--color-brand-400);
 }
+
+/* ------------------------------------------------------------------ */
+/* 说说正文 Markdown 渲染样式（由 src/utils/markdown.ts 生成的标签）      */
+/* ------------------------------------------------------------------ */
+.markdown {
+  overflow-wrap: anywhere;
+}
+.markdown > :first-child {
+  margin-top: 0;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+.markdown p {
+  @apply my-2;
+}
+.markdown h3 {
+  @apply mt-3 mb-1.5 text-base font-semibold;
+}
+.markdown h4 {
+  @apply mt-3 mb-1 text-[15px] font-semibold;
+}
+.markdown h5,
+.markdown h6 {
+  @apply mt-2 mb-1 text-sm font-semibold;
+}
+.markdown a {
+  @apply text-brand-700 underline decoration-brand-300 underline-offset-2 hover:decoration-brand-500 dark:text-brand-300;
+}
+.markdown code {
+  @apply rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[0.85em] text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200;
+}
+.markdown pre {
+  @apply my-3 overflow-x-auto rounded-lg bg-zinc-900 p-3 text-sm text-zinc-100 dark:bg-zinc-950;
+}
+.markdown pre code {
+  @apply bg-transparent p-0 text-inherit;
+}
+.markdown blockquote {
+  @apply my-2 border-l-2 border-zinc-300 pl-3 text-zinc-500 dark:border-zinc-700 dark:text-zinc-400;
+}
+.markdown ul {
+  @apply my-2 list-disc space-y-1 pl-5;
+}
+.markdown ol {
+  @apply my-2 list-decimal space-y-1 pl-5;
+}
+.markdown hr {
+  @apply my-4 border-zinc-200 dark:border-zinc-800;
+}
+.markdown img {
+  @apply my-2 max-h-96 w-auto max-w-full rounded-lg;
+}

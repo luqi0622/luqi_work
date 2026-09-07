@@ -1,8 +1,8 @@
 ---
 import ShuoComment from './ShuoComment.astro';
 import { formatBeijing } from '@/utils/time';
+import { renderMarkdown } from '@/utils/markdown';
 import type { Post } from '@/lib/queries';
-import { REACTION_EMOJIS } from '@/lib/queries';
 
 interface Props {
   post: Post;
@@ -24,6 +24,8 @@ for (const c of post.comments) {
 }
 const roots = post.comments.filter((c) => c.parentId == null || !childrenMap.has(c.parentId));
 const hasContent = post.content.trim().length > 0;
+// 正文支持简单 Markdown（先转义再解析，安全可控）
+const contentHtml = hasContent ? renderMarkdown(post.content) : '';
 const commentEndpoint = isAuthed ? '/app/admin/comments' : `/app/shuoshuo/${post.id}/comments`;
 const counts = reactions ?? {};
 // 展示顺序：优先按数量降序，稳定的已知表情排前
@@ -105,7 +107,10 @@ const totalReactions = activeEmojis.reduce((s, e) => s + (counts[e] ?? 0), 0);
   <!-- 正文 -->
   {
     hasContent ? (
-      <p class="post-content mt-2.5 text-[15px] leading-relaxed whitespace-pre-line text-zinc-800 sm:text-base dark:text-zinc-200">{post.content}</p>
+      <div
+        class="post-content markdown mt-2.5 text-[15px] leading-relaxed text-zinc-800 sm:text-base dark:text-zinc-200"
+        set:html={contentHtml}
+      />
     ) : (
       <p class="post-content mt-2.5 text-sm italic text-zinc-400 dark:text-zinc-600">
         {post.pics > 0 ? `［ 仅 ${post.pics} 张配图 ］` : '［ 无正文 ］'}
@@ -188,39 +193,20 @@ const totalReactions = activeEmojis.reduce((s, e) => s + (counts[e] ?? 0), 0);
       })
     }
 
-    <!-- 展开更多表情面板 -->
-    <div class="reaction-picker-wrap relative">
-      <button
-        type="button"
-        class="reaction-add inline-flex h-9 w-9 items-center justify-center rounded-full border border-dashed border-zinc-300 text-zinc-400 transition-colors hover:border-brand-400 hover:text-brand-600 dark:border-zinc-700 dark:hover:border-brand-600 dark:hover:text-brand-400"
-        aria-label="添加表情"
-        data-post-id={post.id}
-      >
-        <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10" />
-          <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-          <line x1="9" y1="9" x2="9.01" y2="9" />
-          <line x1="15" y1="9" x2="15.01" y2="9" />
-        </svg>
-      </button>
-      <div class="reaction-panel absolute right-0 top-11 z-20 hidden w-56 rounded-xl border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900" data-post-id={post.id}>
-        <div class="grid grid-cols-6 gap-1">
-          {
-            REACTION_EMOJIS.map((emoji) => (
-              <button
-                type="button"
-                class="reaction-pick flex h-9 items-center justify-center rounded-lg text-lg transition-transform hover:scale-110 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                data-post-id={post.id}
-                data-kind={emoji}
-                aria-label={`表态 ${emoji}`}
-              >
-                {emoji}
-              </button>
-            ))
-          }
-        </div>
-      </div>
-    </div>
+    <!-- 添加表情：面板为页面级单例浮层，由 ShuoInteractions 统一渲染与定位 -->
+    <button
+      type="button"
+      class="reaction-add inline-flex h-9 w-9 items-center justify-center rounded-full border border-dashed border-zinc-300 text-zinc-400 transition-colors hover:border-brand-400 hover:text-brand-600 dark:border-zinc-700 dark:hover:border-brand-600 dark:hover:text-brand-400"
+      aria-label="添加表情"
+      data-post-id={post.id}
+    >
+      <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+        <line x1="9" y1="9" x2="9.01" y2="9" />
+        <line x1="15" y1="9" x2="15.01" y2="9" />
+      </svg>
+    </button>
 
     {totalReactions > 0 && (
       <span class="ml-1 text-xs text-zinc-400 dark:text-zinc-600">共 {totalReactions} 次表态</span>

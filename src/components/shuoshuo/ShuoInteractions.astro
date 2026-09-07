@@ -1,9 +1,13 @@
 ---
+import { REACTION_EMOJIS } from '@/lib/queries';
+
 interface Props {
   /** 全部标签，用于博主「配置标签」弹窗 */
   tags: { id: number; name: string }[];
+  /** 可选表情（默认取后端内置列表） */
+  emojis?: string[];
 }
-const { tags } = Astro.props;
+const { tags, emojis = REACTION_EMOJIS } = Astro.props;
 ---
 
 <!-- 标签配置弹窗（博主） -->
@@ -21,6 +25,29 @@ const { tags } = Astro.props;
       <button id="tag-modal-cancel" type="button" class="min-h-9 rounded-lg px-3 py-1.5 text-sm text-zinc-500 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800">取消</button>
       <button id="tag-modal-save" type="button" class="min-h-9 rounded-lg bg-brand-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-700">保存</button>
     </div>
+  </div>
+</div>
+
+<!-- 全局单例表情选择器：整页只有一份浮层，点击卡片上的 + 时定位到按钮旁 -->
+<div
+  id="reaction-picker"
+  class="fixed z-50 hidden w-56 rounded-xl border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+  role="dialog"
+  aria-label="选择表情"
+>
+  <div class="grid grid-cols-6 gap-1">
+    {
+      emojis.map((emoji) => (
+        <button
+          type="button"
+          class="reaction-pick flex h-9 items-center justify-center rounded-lg text-lg transition-transform hover:scale-110 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          data-kind={emoji}
+          aria-label={`表态 ${emoji}`}
+        >
+          {emoji}
+        </button>
+      ))
+    }
   </div>
 </div>
 
@@ -75,9 +102,43 @@ const { tags } = Astro.props;
   const REACT_ACTIVE = ['border-brand-500', 'bg-brand-50', 'font-medium', 'text-brand-700', 'dark:border-brand-500', 'dark:bg-brand-500/15', 'dark:text-brand-300'];
   const REACT_INACTIVE = ['border-zinc-200', 'text-zinc-500', 'hover:border-brand-300', 'hover:bg-brand-50/60', 'hover:text-brand-700', 'dark:border-zinc-700', 'dark:text-zinc-400', 'dark:hover:border-brand-700', 'dark:hover:bg-brand-500/10', 'dark:hover:text-brand-300'];
 
-  function closeAllReactionPanels(except) {
-    document.querySelectorAll('.reaction-panel').forEach((p) => { if (p !== except) p.classList.add('hidden'); });
+  // —— 全局单例表情浮层（整页仅一份，动态定位到被点击的 + 旁） ——
+  const picker = document.getElementById('reaction-picker');
+  let pickerPostId = null;
+  let currentBar = null;
+
+  function closePicker() {
+    if (picker) picker.classList.add('hidden');
+    pickerPostId = null;
+    currentBar = null;
   }
+
+  function openPicker(btn) {
+    if (!picker) return;
+    const bar = btn.closest && btn.closest('[data-reaction-bar]');
+    if (!bar) return;
+    pickerPostId = Number(btn.dataset.postId);
+    currentBar = bar;
+    picker.classList.remove('hidden');
+    const r = btn.getBoundingClientRect();
+    const w = picker.offsetWidth;
+    const h = picker.offsetHeight;
+    const gap = 6;
+    let left = r.left;
+    if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8;
+    if (left < 8) left = 8;
+    let top = r.bottom + gap;
+    if (top + h > window.innerHeight - 8) top = r.top - h - gap;
+    if (top < 8) top = 8;
+    picker.style.left = `${left}px`;
+    picker.style.top = `${top}px`;
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closePicker();
+  });
+  window.addEventListener('scroll', () => { if (picker && !picker.classList.contains('hidden')) closePicker(); }, { passive: true });
+  window.addEventListener('resize', closePicker);
 
   function buildChip(postId, emoji, n, active) {
     const btn = document.createElement('button');
@@ -117,7 +178,7 @@ const { tags } = Astro.props;
     }
   }
 
-  async function toggleReaction(btn, postId, kind) {
+  async function toggleReaction(btn, postId, kind, barOverride) {
     if (btn.dataset.busy === '1') return;
     btn.dataset.busy = '1';
     try {
@@ -129,7 +190,7 @@ const { tags } = Astro.props;
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) { alert(data.error || '操作失败'); return; }
       const counts = data.counts || {};
-      const bar = btn.closest('[data-reaction-bar]');
+      const bar = barOverride || btn.closest('[data-reaction-bar]');
       if (!bar) return;
       const n = counts[kind] || 0;
       const active = !!data.active;
@@ -139,9 +200,9 @@ const { tags } = Astro.props;
         if (chip) chip.remove();
       } else {
         if (!chip) {
-          const wrap = bar.querySelector('.reaction-picker-wrap');
+          const addBtn = bar.querySelector('.reaction-add');
           chip = buildChip(postId, kind, n, active);
-          if (wrap) wrap.before(chip); else bar.appendChild(chip);
+          if (addBtn) addBtn.before(chip); else bar.appendChild(chip);
         }
         chip.dataset.active = active ? '1' : '0';
         chip.setAttribute('aria-pressed', active ? 'true' : 'false');
@@ -165,23 +226,18 @@ const { tags } = Astro.props;
   document.addEventListener('click', (e) => {
     const addBtn = e.target.closest && e.target.closest('.reaction-add');
     if (addBtn) {
-      const bar = addBtn.closest('[data-reaction-bar]');
-      const panel = bar && bar.querySelector('.reaction-panel');
-      if (panel) {
-        const willOpen = panel.classList.contains('hidden');
-        closeAllReactionPanels(panel);
-        panel.classList.toggle('hidden', !willOpen);
-      }
+      const sameTarget = pickerPostId === Number(addBtn.dataset.postId) && picker && !picker.classList.contains('hidden');
+      if (sameTarget) closePicker();
+      else openPicker(addBtn);
       return;
     }
     const pick = e.target.closest && e.target.closest('.reaction-pick');
     if (pick) {
-      const postId = Number(pick.dataset.postId);
+      const postId = pickerPostId;
       const kind = pick.dataset.kind;
-      const bar = pick.closest('[data-reaction-bar]');
-      const panel = bar && bar.querySelector('.reaction-panel');
-      if (panel) panel.classList.add('hidden');
-      toggleReaction(pick, postId, kind);
+      const bar = currentBar;
+      closePicker();
+      if (postId != null && bar) toggleReaction(pick, postId, kind, bar);
       return;
     }
     const chip = e.target.closest && e.target.closest('.reaction-chip');
@@ -191,8 +247,8 @@ const { tags } = Astro.props;
       toggleReaction(chip, postId, kind);
       return;
     }
-    if (!e.target.closest || !e.target.closest('.reaction-picker-wrap')) {
-      closeAllReactionPanels(null);
+    if (picker && !picker.classList.contains('hidden') && !(e.target.closest && e.target.closest('#reaction-picker'))) {
+      closePicker();
     }
   });
 
