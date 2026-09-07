@@ -19,12 +19,11 @@ const PILL_OFF =
 {
   tags.length > 0 && (
     <nav class="-mx-4 sm:mx-0" aria-label="随笔分类">
-      {/* 分类过多时换行展示（不再被一行裁掉），超过两行可折叠 */}
-      <div
-        id="tag-pills"
-        class="flex flex-wrap gap-2 overflow-hidden px-4 pb-1 transition-[max-height] duration-200 sm:px-0"
-        style="max-height: 5.25rem;"
-      >
+        {/* 分类过多时换行展示（不再被一行裁掉），超过三行才折叠 */}
+        <div
+          id="tag-pills"
+          class="flex flex-wrap gap-2 overflow-hidden px-4 pb-1 transition-[max-height] duration-200 sm:px-0"
+        >
         <a href={`/blog${sortQS}`} class:list={[PILL, current ? PILL_OFF : PILL_ON]}>
           全部
           <span class="text-xs opacity-70">{total}</span>
@@ -58,17 +57,20 @@ const PILL_OFF =
     const box = document.getElementById('tag-pills');
     const more = document.getElementById('tag-more');
     if (!box || !more) return;
-    const COLLAPSED = '5.25rem';
+    // 超过 3 行才折叠（3 行以内直接全部展示，不再藏分类）
+    const COLLAPSED = '7.75rem';
 
     function sync() {
       if (more.dataset.open === '1') {
         box.style.maxHeight = 'none';
         return;
       }
+      box.style.maxHeight = 'none';
+      const full = box.scrollHeight;
       box.style.maxHeight = COLLAPSED;
-      // 折叠后内容确实放不下才显示「展开」
-      const overflowing = box.scrollHeight > box.clientHeight + 2;
-      more.classList.toggle('hidden', !overflowing);
+      const needCollapse = full > box.clientHeight + 2;
+      if (!needCollapse) box.style.maxHeight = 'none';
+      more.classList.toggle('hidden', !needCollapse);
     }
 
     more.addEventListener('click', () => {

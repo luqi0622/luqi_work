@@ -451,11 +451,14 @@ const { tags, emojis = REACTION_EMOJIS } = Astro.props;
     if (!modalList) return;
     modalList.innerHTML = '';
     const all = window.__SHUO_TAGS__ || [];
-    if (all.length === 0) {
+    const known = new Set(all.map((t) => t.name));
+    // 选中但不在已有标签里的 = 本次弹窗新输入的标签，也要渲染出来
+    const fresh = modalSelected.filter((n) => !known.has(n));
+    if (all.length === 0 && fresh.length === 0) {
       modalList.innerHTML = '<p class="text-xs text-zinc-400">还没有标签，用下方输入框新建一个吧。</p>';
     }
-    for (const t of all) {
-      const checked = modalSelected.includes(t.name);
+    const buildChip = (name, isNew) => {
+      const checked = modalSelected.includes(name);
       const label = document.createElement('label');
       label.className = 'inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors ' +
         (checked
@@ -463,20 +466,22 @@ const { tags, emojis = REACTION_EMOJIS } = Astro.props;
           : 'border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800');
       const cb = document.createElement('input');
       cb.type = 'checkbox';
-      cb.value = t.name;
+      cb.value = name;
       cb.checked = checked;
       cb.className = 'accent-brand-600';
       cb.addEventListener('change', () => {
-        if (cb.checked) { if (!modalSelected.includes(t.name)) modalSelected.push(t.name); }
-        else { modalSelected = modalSelected.filter((n) => n !== t.name); }
+        if (cb.checked) { if (!modalSelected.includes(name)) modalSelected.push(name); }
+        else { modalSelected = modalSelected.filter((n) => n !== name); }
         renderTagModal();
       });
       const span = document.createElement('span');
-      span.textContent = t.name;
+      span.textContent = isNew ? name + '（新）' : name;
       label.appendChild(cb);
       label.appendChild(span);
       modalList.appendChild(label);
-    }
+    };
+    for (const t of all) buildChip(t.name, false);
+    for (const n of fresh) buildChip(n, true);
   }
 
   if (modalNew) {

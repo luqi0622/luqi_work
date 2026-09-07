@@ -388,8 +388,9 @@ export async function setPostTags(postId: number, names: string[]): Promise<void
       clean.map((name) => ({ sql: 'INSERT OR IGNORE INTO tags (name) VALUES (?)', args: [name] })),
       'write'
     );
+    // 按 name 去重取 id（若表无 UNIQUE 约束且历史存在重名行，避免插入重复关联）
     const rs = await db.execute({
-      sql: `SELECT id, name FROM tags WHERE name IN (${clean.map(() => '?').join(',')})`,
+      sql: `SELECT MIN(id) AS id, name FROM tags WHERE name IN (${clean.map(() => '?').join(',')}) GROUP BY name`,
       args: clean,
     });
     const idRows = rs.rows.map((r) => Number(r.id));
