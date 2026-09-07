@@ -106,20 +106,17 @@ const { tags, emojis = REACTION_EMOJIS } = Astro.props;
   const picker = document.getElementById('reaction-picker');
   let pickerPostId = null;
   let currentBar = null;
+  let currentBtn = null;
 
   function closePicker() {
     if (picker) picker.classList.add('hidden');
     pickerPostId = null;
     currentBar = null;
+    currentBtn = null;
   }
 
-  function openPicker(btn) {
+  function placePicker(btn) {
     if (!picker) return;
-    const bar = btn.closest && btn.closest('[data-reaction-bar]');
-    if (!bar) return;
-    pickerPostId = Number(btn.dataset.postId);
-    currentBar = bar;
-    picker.classList.remove('hidden');
     const r = btn.getBoundingClientRect();
     const w = picker.offsetWidth;
     const h = picker.offsetHeight;
@@ -134,11 +131,35 @@ const { tags, emojis = REACTION_EMOJIS } = Astro.props;
     picker.style.top = `${top}px`;
   }
 
+  function openPicker(btn) {
+    if (!picker) return;
+    const bar = btn.closest && btn.closest('[data-reaction-bar]');
+    if (!bar) return;
+    pickerPostId = Number(btn.dataset.postId);
+    currentBar = bar;
+    currentBtn = btn;
+    picker.classList.remove('hidden');
+    placePicker(btn);
+  }
+
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closePicker();
   });
-  window.addEventListener('scroll', () => { if (picker && !picker.classList.contains('hidden')) closePicker(); }, { passive: true });
-  window.addEventListener('resize', closePicker);
+  // 滚动/缩放：按钮还在视野内就跟随重定位，滚出视野才关闭（避免点击时的轻微滚动把面板关掉）
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (!picker || picker.classList.contains('hidden') || !currentBtn) return;
+      const r = currentBtn.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > window.innerHeight) closePicker();
+      else placePicker(currentBtn);
+    },
+    { passive: true }
+  );
+  window.addEventListener('resize', () => {
+    if (currentBtn) placePicker(currentBtn);
+    else closePicker();
+  });
 
   function buildChip(postId, emoji, n, active) {
     const btn = document.createElement('button');
