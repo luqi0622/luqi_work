@@ -330,8 +330,9 @@ export async function getPostTagsMap(): Promise<Map<number, string[]>> {
 export async function listTags(): Promise<TagWithCount[]> {
   const rs = await db.execute(
     `SELECT t.id, t.name, COUNT(pt.post_id) AS count
-     FROM tags t LEFT JOIN post_tags pt ON pt.tag_id = t.id
-     GROUP BY t.id ORDER BY COUNT(pt.post_id) DESC, t.name`
+     FROM tags t LEFT JOIN post_tags pt ON pt.tag_id = t.id AND pt.post_id IN (SELECT id FROM posts WHERE deleted_at IS NULL)
+     GROUP BY t.id HAVING COUNT(pt.post_id) > 0
+     ORDER BY COUNT(pt.post_id) DESC, t.name`
   );
   return rs.rows.map((r) => ({ id: Number(r.id), name: String(r.name), count: Number(r.count) }));
 }
@@ -404,8 +405,14 @@ export async function setPostTags(postId: number, names: string[]): Promise<void
       );
     }
   }
-  // 清理无关联的孤立标签
-  await db.execute(`DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM post_tags)`);
+  // 清理无关联的孤立标签（关联到已软删除说说的标签同样视为孤立）
+  await db.execute(
+    `DELETE FROM tags WHERE id NOT IN (
+       SELECT pt.tag_id FROM post_tags pt
+       JOIN posts p ON p.id = pt.post_id
+       WHERE p.deleted_at IS NULL
+     )`
+  );
 }
 
 export async function deleteTag(id: number): Promise<void> {
