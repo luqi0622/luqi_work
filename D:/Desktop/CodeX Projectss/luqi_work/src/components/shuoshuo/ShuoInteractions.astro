@@ -1,0 +1,506 @@
+---
+import { REACTION_EMOJIS } from '@/lib/queries';
+
+interface Props {
+  /** 全部标签，用于博主「配置标签」弹窗 */
+  tags: { id: number; name: string }[];
+  /** 可选表情（默认取后端内置列表） */
+  emojis?: string[];
+}
+const { tags, emojis = REACTION_EMOJIS } = Astro.props;
+---
+
+<!-- 标签配置弹窗（博主） -->
+<div id="tag-modal" class="hidden fixed inset-0 z-50 items-center justify-center bg-black/40 p-4">
+  <div class="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+    <h3 class="font-medium text-zinc-800 dark:text-zinc-100">配置标签</h3>
+    <div id="tag-modal-list" class="mt-3 flex max-h-60 flex-wrap content-start gap-2 overflow-y-auto"></div>
+    <input
+      id="tag-modal-new"
+      type="text"
+      placeholder="输入新标签后回车"
+      class="mt-3 w-full rounded-lg border border-zinc-200 bg-transparent px-3 py-2 text-base outline-none focus:border-brand-500 md:text-sm dark:border-zinc-800 dark:placeholder:text-zinc-600"
+    />
+    <div class="mt-4 flex justify-end gap-2">
+      <button id="tag-modal-cancel" type="button" class="min-h-9 rounded-lg px-3 py-1.5 text-sm text-zinc-500 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800">取消</button>
+      <button id="tag-modal-save" type="button" class="min-h-9 rounded-lg bg-brand-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-700">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 全局单例表情选择器：整页只有一份浮层，点击卡片上的 + 时定位到按钮旁 -->
+<div
+  id="reaction-picker"
+  class="fixed z-50 hidden w-56 rounded-xl border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+  role="dialog"
+  aria-label="选择表情"
+>
+  <div class="grid grid-cols-6 gap-1">
+    {
+      emojis.map((emoji) => (
+        <button
+          type="button"
+          class="reaction-pick flex h-9 items-center justify-center rounded-lg text-lg transition-transform hover:scale-110 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          data-kind={emoji}
+          aria-label={`表态 ${emoji}`}
+        >
+          {emoji}
+        </button>
+      ))
+    }
+  </div>
+</div>
+
+<script is:inline define:vars={{ allTags: tags.map((t) => ({ id: t.id, name: t.name })) }}>
+  const CSRF = { 'x-requested-with': 'fetch', 'content-type': 'application/json' };
+  window.__SHUO_TAGS__ = allTags;
+  const modal = document.getElementById('tag-modal');
+  const modalList = document.getElementById('tag-modal-list');
+  const modalNew = document.getElementById('tag-modal-new');
+  let modalPostId = null;
+  let modalSelected = [];
+
+  function openModal() {
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+  }
+  function closeModal() {
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+
+  function closeMenu(el) {
+    const m = el && el.closest && el.closest('details.shuo-menu');
+    if (m) m.open = false;
+  }
+
+  // —— 发布新随笔（博主）——
+  const composeForm = document.getElementById('compose-form');
+  if (composeForm) {
+    composeForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const ta = composeForm.querySelector('#compose-content');
+      const msg = composeForm.querySelector('#compose-msg');
+      const btn = composeForm.querySelector('button[type=submit]');
+      const content = ta.value.trim();
+      if (!content) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch('/app/admin/posts', { method: 'POST', headers: CSRF, body: JSON.stringify({ content }) });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) { location.reload(); return; }
+        msg.textContent = data.error || '发布失败';
+      } catch { msg.textContent = '网络错误'; }
+      btn.disabled = false;
+    });
+  }
+
+  // —— 表态：Emoji 快捷表情（Slack / 即刻 风格）——
+  const REACT_BASE = 'reaction-chip inline-flex min-h-9 items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs transition-all active:scale-95';
+  const REACT_ACTIVE = ['border-brand-500', 'bg-brand-50', 'font-medium', 'text-brand-700', 'dark:border-brand-500', 'dark:bg-brand-500/15', 'dark:text-brand-300'];
+  const REACT_INACTIVE = ['border-zinc-200', 'text-zinc-500', 'hover:border-brand-300', 'hover:bg-brand-50/60', 'hover:text-brand-700', 'dark:border-zinc-700', 'dark:text-zinc-400', 'dark:hover:border-brand-700', 'dark:hover:bg-brand-500/10', 'dark:hover:text-brand-300'];
+
+  // —— 全局单例表情浮层（整页仅一份，动态定位到被点击的 + 旁） ——
+  const picker = document.getElementById('reaction-picker');
+  let pickerPostId = null;
+  let currentBar = null;
+  let currentBtn = null;
+
+  function closePicker() {
+    if (picker) picker.classList.add('hidden');
+    pickerPostId = null;
+    currentBar = null;
+    currentBtn = null;
+  }
+
+  function placePicker(btn) {
+    if (!picker) return;
+    const r = btn.getBoundingClientRect();
+    const w = picker.offsetWidth;
+    const h = picker.offsetHeight;
+    const gap = 6;
+    let left = r.left;
+    if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8;
+    if (left < 8) left = 8;
+    let top = r.bottom + gap;
+    if (top + h > window.innerHeight - 8) top = r.top - h - gap;
+    if (top < 8) top = 8;
+    picker.style.left = `${left}px`;
+    picker.style.top = `${top}px`;
+  }
+
+  function openPicker(btn) {
+    if (!picker) return;
+    const bar = btn.closest && btn.closest('[data-reaction-bar]');
+    if (!bar) return;
+    pickerPostId = Number(btn.dataset.postId);
+    currentBar = bar;
+    currentBtn = btn;
+    picker.classList.remove('hidden');
+    placePicker(btn);
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closePicker();
+  });
+  // 滚动/缩放：按钮还在视野内就跟随重定位，滚出视野才关闭（避免点击时的轻微滚动把面板关掉）
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (!picker || picker.classList.contains('hidden') || !currentBtn) return;
+      const r = currentBtn.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > window.innerHeight) closePicker();
+      else placePicker(currentBtn);
+    },
+    { passive: true }
+  );
+  window.addEventListener('resize', () => {
+    if (currentBtn) placePicker(currentBtn);
+    else closePicker();
+  });
+
+  function buildChip(postId, emoji, n, active) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = REACT_BASE + ' ' + (active ? REACT_ACTIVE.join(' ') : REACT_INACTIVE.join(' '));
+    btn.dataset.postId = String(postId);
+    btn.dataset.kind = emoji;
+    btn.dataset.active = active ? '1' : '0';
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    btn.title = '点击切换';
+    const emo = document.createElement('span');
+    emo.className = 'text-sm leading-none reaction-emoji';
+    emo.setAttribute('aria-hidden', 'true');
+    emo.textContent = emoji;
+    const cnt = document.createElement('span');
+    cnt.className = 'reaction-count tabular-nums' + (n > 0 ? '' : ' hidden');
+    cnt.dataset.count = String(n);
+    cnt.textContent = String(n);
+    btn.appendChild(emo);
+    btn.appendChild(cnt);
+    return btn;
+  }
+
+  function updateReactionTotal(bar) {
+    const total = [...bar.querySelectorAll('.reaction-chip .reaction-count')]
+      .reduce((s, el) => s + (Number(el.dataset.count) || 0), 0);
+    let span = bar.querySelector('.reaction-total');
+    if (total > 0) {
+      if (!span) {
+        span = document.createElement('span');
+        span.className = 'reaction-total ml-1 text-xs text-zinc-400 dark:text-zinc-600';
+        bar.appendChild(span);
+      }
+      span.textContent = `共 ${total} 次表态`;
+    } else if (span) {
+      span.remove();
+    }
+  }
+
+  async function toggleReaction(btn, postId, kind, barOverride) {
+    if (btn.dataset.busy === '1') return;
+    btn.dataset.busy = '1';
+    try {
+      const res = await fetch('/app/reactions', {
+        method: 'POST',
+        headers: CSRF,
+        body: JSON.stringify({ postId, kind }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) { alert(data.error || '操作失败'); return; }
+      const counts = data.counts || {};
+      const bar = barOverride || btn.closest('[data-reaction-bar]');
+      if (!bar) return;
+      const n = counts[kind] || 0;
+      const active = !!data.active;
+      let chip = null;
+      bar.querySelectorAll('.reaction-chip').forEach((c) => { if (c.dataset.kind === kind) chip = c; });
+      if (n === 0) {
+        if (chip) chip.remove();
+      } else {
+        if (!chip) {
+          const addBtn = bar.querySelector('.reaction-add');
+          chip = buildChip(postId, kind, n, active);
+          if (addBtn) addBtn.before(chip); else bar.appendChild(chip);
+        }
+        chip.dataset.active = active ? '1' : '0';
+        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+        const cnt = chip.querySelector('.reaction-count');
+        if (cnt) { cnt.textContent = String(n); cnt.dataset.count = String(n); if (n > 0) cnt.classList.remove('hidden'); }
+        if (active) {
+          chip.classList.add(...REACT_ACTIVE);
+          chip.classList.remove(...REACT_INACTIVE);
+        } else {
+          chip.classList.remove(...REACT_ACTIVE);
+          chip.classList.add(...REACT_INACTIVE);
+        }
+        // 弹性缩放动画
+        chip.classList.remove('pop'); void chip.offsetWidth; chip.classList.add('pop');
+      }
+      updateReactionTotal(bar);
+    } catch { alert('网络错误'); }
+    btn.dataset.busy = '0';
+  }
+
+  document.addEventListener('click', (e) => {
+    const addBtn = e.target.closest && e.target.closest('.reaction-add');
+    if (addBtn) {
+      const sameTarget = pickerPostId === Number(addBtn.dataset.postId) && picker && !picker.classList.contains('hidden');
+      if (sameTarget) closePicker();
+      else openPicker(addBtn);
+      return;
+    }
+    const pick = e.target.closest && e.target.closest('.reaction-pick');
+    if (pick) {
+      const postId = pickerPostId;
+      const kind = pick.dataset.kind;
+      const bar = currentBar;
+      closePicker();
+      if (postId != null && bar) toggleReaction(pick, postId, kind, bar);
+      return;
+    }
+    const chip = e.target.closest && e.target.closest('.reaction-chip');
+    if (chip) {
+      const postId = Number(chip.dataset.postId);
+      const kind = chip.dataset.kind;
+      toggleReaction(chip, postId, kind);
+      return;
+    }
+    if (picker && !picker.classList.contains('hidden') && !(e.target.closest && e.target.closest('#reaction-picker'))) {
+      closePicker();
+    }
+  });
+
+  // —— 评论 / 回复 提交（事件委托）——
+  document.addEventListener('submit', async (e) => {
+    const form = e.target.closest && e.target.closest('form[data-endpoint]');
+    if (!form) return;
+    e.preventDefault();
+    const endpoint = form.dataset.endpoint;
+    const postId = Number(form.dataset.postId);
+    const parentId = form.dataset.parentId ? Number(form.dataset.parentId) : null;
+    const replyTo = form.dataset.replyTo || null;
+    const auth = form.dataset.auth;
+    const contentEl = form.querySelector('.comment-content, .reply-content');
+    const content = contentEl ? contentEl.value.trim() : '';
+    const hpEl = form.querySelector('.hp');
+    const hp = hpEl ? hpEl.value : '';
+    const msg = form.querySelector('.comment-msg, .reply-msg');
+    if (!content) { if (msg) msg.textContent = '内容不能为空'; return; }
+    const btn = form.querySelector('button[type=submit]');
+    if (btn) btn.disabled = true;
+    // 游客一律匿名，不再收集昵称
+    const body = auth === 'guest'
+      ? { content, hp, parentId, replyTo }
+      : { postId, content, parentId, replyTo };
+    try {
+      const res = await fetch(endpoint, { method: 'POST', headers: CSRF, body: JSON.stringify(body) });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) { location.reload(); return; }
+      if (msg) msg.textContent = data.error || '提交失败';
+    } catch { if (msg) msg.textContent = '网络错误'; }
+    if (btn) btn.disabled = false;
+  });
+
+  // —— 评论框 / 回复框 展开与收起 ——
+  document.addEventListener('click', (e) => {
+    const toggle = e.target.closest && e.target.closest('.reply-toggle');
+    if (toggle) {
+      const li = toggle.closest('li');
+      const f = li && li.querySelector('.reply-form');
+      if (f) f.classList.toggle('hidden');
+      return;
+    }
+    const cancel = e.target.closest && e.target.closest('.reply-cancel');
+    if (cancel) {
+      const f = cancel.closest('.reply-form');
+      if (f) f.classList.add('hidden');
+      return;
+    }
+    const open = e.target.closest && e.target.closest('.comment-open');
+    if (open) {
+      const card = open.closest('article');
+      const f = card && card.querySelector('.comment-form');
+      if (f) {
+        f.classList.remove('hidden');
+        open.classList.add('hidden');
+        const ta = f.querySelector('.comment-content');
+        if (ta) ta.focus();
+      }
+      return;
+    }
+    const close = e.target.closest && e.target.closest('.comment-close');
+    if (close) {
+      const card = close.closest('article');
+      const f = card && card.querySelector('.comment-form');
+      const ob = card && card.querySelector('.comment-open');
+      if (f) f.classList.add('hidden');
+      if (ob) ob.classList.remove('hidden');
+      return;
+    }
+  });
+
+  // —— 删除评论（博主）——
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest && e.target.closest('button.comment-delete');
+    if (!btn) return;
+    e.preventDefault();
+    if (!confirm('确定删除这条评论及其全部回复？')) return;
+    const postId = Number(btn.dataset.postId);
+    const commentId = Number(btn.dataset.commentId);
+    try {
+      const res = await fetch('/app/admin/comments', {
+        method: 'DELETE',
+        headers: CSRF,
+        body: JSON.stringify({ postId, commentId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) { location.reload(); }
+      else alert(data.error || '删除失败');
+    } catch { alert('网络错误'); }
+  });
+
+  // —— 三条点菜单：编辑 / 置顶 / 标签 / 删除 ——
+  document.addEventListener('click', async (e) => {
+    const editBtn = e.target.closest && e.target.closest('button.edit-toggle');
+    if (editBtn) {
+      const card = editBtn.closest('article');
+      card.querySelector('.post-content')?.classList.add('hidden');
+      card.querySelector('.edit-form')?.classList.remove('hidden');
+      closeMenu(editBtn);
+      return;
+    }
+    const editCancel = e.target.closest && e.target.closest('button.edit-cancel');
+    if (editCancel) {
+      const card = editCancel.closest('article');
+      card.querySelector('.edit-form')?.classList.add('hidden');
+      card.querySelector('.post-content')?.classList.remove('hidden');
+      return;
+    }
+    const editSave = e.target.closest && e.target.closest('button.edit-save');
+    if (editSave) {
+      const card = editSave.closest('article');
+      const postId = Number(editSave.dataset.postId);
+      const ta = card.querySelector('.edit-content');
+      const content = ta.value.trim();
+      const msg = card.querySelector('.edit-msg');
+      if (!content) { msg.textContent = '内容不能为空'; return; }
+      editSave.disabled = true;
+      try {
+        const res = await fetch(`/app/admin/posts/${postId}`, { method: 'PATCH', headers: CSRF, body: JSON.stringify({ content }) });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) { location.reload(); return; }
+        msg.textContent = data.error || '保存失败';
+      } catch { msg.textContent = '网络错误'; }
+      editSave.disabled = false;
+      return;
+    }
+    const pinBtn = e.target.closest && e.target.closest('button.pin-toggle');
+    if (pinBtn) {
+      const postId = Number(pinBtn.dataset.postId);
+      const pinned = pinBtn.dataset.pinned === '1' ? 0 : 1;
+      closeMenu(pinBtn);
+      try {
+        const res = await fetch(`/app/admin/posts/${postId}`, { method: 'PATCH', headers: CSRF, body: JSON.stringify({ pinned }) });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) { location.reload(); }
+        else alert(data.error || '操作失败');
+      } catch { alert('网络错误'); }
+      return;
+    }
+    const delBtn = e.target.closest && e.target.closest('button.delete-toggle');
+    if (delBtn) {
+      const postId = Number(delBtn.dataset.postId);
+      closeMenu(delBtn);
+      if (!confirm('确定删除这条随笔？')) return;
+      try {
+        const res = await fetch(`/app/admin/posts/${postId}`, { method: 'DELETE', headers: CSRF });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) { location.reload(); }
+        else alert(data.error || '删除失败');
+      } catch { alert('网络错误'); }
+      return;
+    }
+    const privBtn = e.target.closest && e.target.closest('button.private-toggle');
+    if (privBtn) {
+      const postId = Number(privBtn.dataset.postId);
+      const isPrivate = privBtn.dataset.private === '1' ? 0 : 1;
+      closeMenu(privBtn);
+      try {
+        const res = await fetch(`/app/admin/posts/${postId}`, { method: 'PATCH', headers: CSRF, body: JSON.stringify({ isPrivate }) });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok) { location.reload(); }
+        else alert(data.error || '操作失败');
+      } catch { alert('网络错误'); }
+      return;
+    }
+    const tagBtn = e.target.closest && e.target.closest('button.tag-toggle');
+    if (tagBtn) {
+      modalPostId = Number(tagBtn.dataset.postId);
+      modalSelected = (tagBtn.dataset.currentTags || '').split(',').filter(Boolean);
+      renderTagModal();
+      openModal();
+      closeMenu(tagBtn);
+      return;
+    }
+  });
+
+  function renderTagModal() {
+    if (!modalList) return;
+    modalList.innerHTML = '';
+    const all = window.__SHUO_TAGS__ || [];
+    if (all.length === 0) {
+      modalList.innerHTML = '<p class="text-xs text-zinc-400">还没有标签，用下方输入框新建一个吧。</p>';
+    }
+    for (const t of all) {
+      const checked = modalSelected.includes(t.name);
+      const label = document.createElement('label');
+      label.className = 'inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors ' +
+        (checked
+          ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300'
+          : 'border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = t.name;
+      cb.checked = checked;
+      cb.className = 'accent-brand-600';
+      cb.addEventListener('change', () => {
+        if (cb.checked) { if (!modalSelected.includes(t.name)) modalSelected.push(t.name); }
+        else { modalSelected = modalSelected.filter((n) => n !== t.name); }
+        renderTagModal();
+      });
+      const span = document.createElement('span');
+      span.textContent = t.name;
+      label.appendChild(cb);
+      label.appendChild(span);
+      modalList.appendChild(label);
+    }
+  }
+
+  if (modalNew) {
+    modalNew.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const v = modalNew.value.trim();
+        if (v && !modalSelected.includes(v)) { modalSelected.push(v); modalNew.value = ''; renderTagModal(); }
+      }
+    });
+  }
+  document.getElementById('tag-modal-cancel')?.addEventListener('click', closeModal);
+  document.getElementById('tag-modal-save')?.addEventListener('click', async () => {
+    if (modalPostId == null) return;
+    try {
+      const res = await fetch(`/app/admin/posts/${modalPostId}`, {
+        method: 'PATCH',
+        headers: CSRF,
+        body: JSON.stringify({ tagNames: modalSelected }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) { location.reload(); }
+      else alert(data.error || '保存失败');
+    } catch { alert('网络错误'); }
+  });
+  modal?.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+</script>

@@ -1,0 +1,19 @@
+---
+// 博主专用发布框（仅登录后由博客页渲染）
+---
+<form id="compose-form" class="rounded-2xl border border-zinc-200 bg-white/60 p-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/40">
+  <textarea
+    id="compose-content"
+    rows="3"
+    maxlength="2000"
+    placeholder="写条新随笔…（支持 **粗体**、`代码`、> 引用 等简单 Markdown）"
+    class="w-full resize-y bg-transparent text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-200"
+  ></textarea>
+  <div class="mt-2 flex items-center justify-between">
+    <span id="compose-msg" class="text-xs text-red-500"></span>
+    <button
+      type="submit"
+      class="rounded-lg bg-gradient-to-r from-brand-600 to-brand-500 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
+    >发布</button>
+  </div>
+</form>

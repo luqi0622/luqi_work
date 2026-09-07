@@ -1,0 +1,101 @@
+---
+import type { CommentItem } from '@/lib/queries';
+import ShuoComment from './ShuoComment.astro';
+
+interface Props {
+  comment: CommentItem;
+  childrenMap: Map<number, CommentItem[]>;
+  postId: number;
+  isAuthed: boolean;
+  depth: number;
+}
+const { comment, childrenMap, postId, isAuthed, depth } = Astro.props;
+const kids = childrenMap.get(comment.id) ?? [];
+const MAX_DEPTH = 4;
+const showChildren = depth < MAX_DEPTH;
+const endpoint = isAuthed ? '/app/admin/comments' : `/app/shuoshuo/${postId}/comments`;
+---
+<li class="relative" data-comment-id={comment.id}>
+  <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+    <span class="font-medium text-zinc-700 dark:text-zinc-200">{comment.name}</span>
+    {
+      comment.role === 'admin' ? (
+        <span class="inline-flex items-center rounded-full bg-gradient-to-r from-brand-600 to-brand-500 px-1.5 py-0.5 text-[10px] font-medium text-white">博主</span>
+      ) : (
+        <span class="inline-flex items-center rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">游客</span>
+      )
+    }
+    <span class="text-xs text-zinc-400 dark:text-zinc-600">{comment.time}</span>
+    {
+      isAuthed && (
+        <button
+          type="button"
+          class="comment-delete ml-auto text-xs text-zinc-400 transition-colors hover:text-red-500"
+          data-post-id={postId}
+          data-comment-id={comment.id}
+        >删除</button>
+      )
+    }
+  </div>
+
+  {
+    comment.replyTo && (
+      <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">回复 <span class="font-medium">@{comment.replyTo}</span></p>
+    )
+  }
+
+  <p class="mt-0.5 whitespace-pre-line text-sm leading-relaxed text-zinc-600 dark:text-zinc-300">{comment.content}</p>
+
+  <div class="mt-1">
+    <button
+      type="button"
+      class="reply-toggle text-xs text-zinc-400 transition-colors hover:text-zinc-700 dark:hover:text-zinc-200"
+      data-comment-id={comment.id}
+      data-comment-name={comment.name}
+    >回复</button>
+  </div>
+
+  <!-- 内联回复框（默认隐藏） -->
+  <form
+    class="reply-form hidden mt-2 flex flex-col gap-2"
+    data-endpoint={endpoint}
+    data-post-id={postId}
+    data-parent-id={comment.id}
+    data-reply-to={comment.name}
+    data-auth={isAuthed ? 'admin' : 'guest'}
+  >
+    {
+      isAuthed ? (
+        <p class="text-xs text-zinc-400 dark:text-zinc-500">以「博主」身份回复</p>
+      ) : (
+        <p class="text-xs text-zinc-400 dark:text-zinc-500">以「匿名」身份回复</p>
+      )
+    }
+    <textarea
+      class="reply-content resize-y rounded-lg border border-zinc-200 bg-transparent px-3 py-2 text-base outline-none placeholder:text-zinc-400 focus:border-brand-500 md:text-sm dark:border-zinc-800 dark:placeholder:text-zinc-600"
+      placeholder={`在此回复 @${comment.name}…`}
+      rows="2"
+      maxlength="500"
+      required
+    ></textarea>
+    <input type="text" name="hp" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true" style="display:none" />
+    <div class="flex items-center gap-2">
+      <button
+        type="submit"
+        class="min-h-9 rounded-lg bg-brand-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-700"
+      >回复</button>
+      <button type="button" class="reply-cancel text-xs text-zinc-400 transition-colors hover:text-zinc-600">取消</button>
+      <span class="reply-msg text-xs text-red-500"></span>
+    </div>
+  </form>
+
+  {
+    showChildren && kids.length > 0 && (
+      <ul class="mt-2.5 space-y-2.5 border-l-2 border-zinc-200 pl-3 dark:border-zinc-800">
+        {kids.map((k) => (
+          <ShuoComment comment={k} childrenMap={childrenMap} postId={postId} isAuthed={isAuthed} depth={depth + 1} />
+        ))}
+      </ul>
+    )
+  }
+</li>

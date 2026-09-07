@@ -1,0 +1,88 @@
+---
+/**
+ * 文章目录：服务端渲染目录树 + 客户端 IntersectionObserver 滚动高亮
+ */
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface Props {
+  headings: Heading[];
+}
+
+const { headings } = Astro.props;
+const toc = headings.filter((h) => h.depth >= 2 && h.depth <= 3);
+---
+
+{
+  toc.length > 0 && (
+    <nav
+      id="toc"
+      aria-label="文章目录"
+      class="hidden rounded-xl border border-zinc-200/70 bg-zinc-50/60 p-4 lg:block dark:border-zinc-800/70 dark:bg-zinc-900/60"
+    >
+      <p class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+        <span class="toc-icon" data-lucide="list" />
+        目录
+      </p>
+      <ul class="space-y-1.5 border-l border-zinc-200 dark:border-zinc-800">
+        {toc.map((h) => (
+          <li>
+            <a
+              href={`#${h.slug}`}
+              data-toc-link={h.slug}
+              class:list={[
+                'toc-link block text-sm leading-snug',
+                h.depth === 3 ? 'pl-6' : 'pl-3.5',
+              ]}
+            >
+              {h.text}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  )
+}
+
+<style>
+  .toc-icon {
+    display: inline-block;
+    width: 0.9rem;
+    height: 0.9rem;
+    background-color: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='8' x2='21' y1='6' y2='6'/%3E%3Cline x1='8' x2='21' y1='12' y2='12'/%3E%3Cline x1='8' x2='21' y1='18' y2='18'/%3E%3Cline x1='3' x2='3.01' y1='6' y2='6'/%3E%3Cline x1='3' x2='3.01' y1='12' y2='12'/%3E%3Cline x1='3' x2='3.01' y1='18' y2='18'/%3E%3C/svg%3E")
+      no-repeat center / contain;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='8' x2='21' y1='6' y2='6'/%3E%3Cline x1='8' x2='21' y1='12' y2='12'/%3E%3Cline x1='8' x2='21' y1='18' y2='18'/%3E%3Cline x1='3' x2='3.01' y1='6' y2='6'/%3E%3Cline x1='3' x2='3.01' y1='12' y2='12'/%3E%3Cline x1='3' x2='3.01' y1='18' y2='18'/%3E%3C/svg%3E")
+      no-repeat center / contain;
+  }
+</style>
+
+<script>
+  // 滚动高亮：观察各标题，进入视口顶部区域时点亮对应目录项
+  const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]'));
+  if (links.length > 0) {
+    const map = new Map<string, HTMLAnchorElement>();
+    for (const link of links) map.set(link.dataset.tocLink ?? '', link);
+
+    const headings = Array.from(document.querySelectorAll<HTMLElement>('h2[id], h3[id]'));
+
+    const activate = (id: string) => {
+      for (const link of links) link.classList.remove('active');
+      map.get(id)?.classList.add('active');
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) activate(entry.target.id);
+        }
+      },
+      { rootMargin: '-15% 0px -70% 0px' }
+    );
+
+    for (const heading of headings) observer.observe(heading);
+  }
+</script>

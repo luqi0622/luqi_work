@@ -1,0 +1,479 @@
+@import 'tailwindcss';
+@import '@fontsource/zcool-kuaile';
+@import '@fontsource/noto-sans-sc/400.css';
+@import '@fontsource/noto-sans-sc/500.css';
+@import '@fontsource/noto-sans-sc/700.css';
+
+/* 暗色模式采用 class 策略（<html class="dark">），由 ThemeToggle 切换 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans:
+    'Noto Sans SC', ui-sans-serif, system-ui, -apple-system, 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  /* 展示字体：站酷快乐体，用于标题/品牌，青春俏皮 */
+  --font-display: 'ZCOOL KuaiLe', 'Noto Sans SC', ui-sans-serif, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+  /* --------------------------------------------------------------
+     主色：科技蓝（唯一强调色，核心 #2563EB）
+     搭配中性色 zinc（深灰/墨）与功能性琥珀（仅用于置顶等状态标记），
+     全站主色控制在 3 种以内。
+     -------------------------------------------------------------- */
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-brand-900: #1e3a8a;
+  --color-brand-950: #172554;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background-color: theme(--color-brand-200);
+  color: theme(--color-brand-950);
+}
+
+.dark ::selection {
+  background-color: theme(--color-brand-700);
+  color: white;
+}
+
+/* ------------------------------------------------------------------ */
+/* 卡片悬停：微妙上浮（translateY）+ 阴影加深，增强可点击感               */
+/* ------------------------------------------------------------------ */
+.card-hover {
+  transition:
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.22s ease,
+    border-color 0.22s ease;
+  will-change: transform;
+}
+
+.card-hover:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 12px 28px -10px rgb(15 23 42 / 0.22),
+    0 4px 10px -4px rgb(15 23 42 / 0.12);
+  border-color: theme(--color-brand-300);
+}
+
+.dark .card-hover:hover {
+  box-shadow:
+    0 12px 30px -10px rgb(0 0 0 / 0.6),
+    0 4px 10px -4px rgb(0 0 0 / 0.45);
+  border-color: theme(--color-brand-800);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-hover,
+  .card-hover:hover {
+    transform: none;
+    transition: box-shadow 0.2s ease;
+  }
+}
+
+/* 分类 Pill 选项卡：横向滚动且隐藏滚动条（移动端友好） */
+.pill-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.pill-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* 品牌强调：渐变文字 / 筛选 chip 激活态                                  */
+/* ------------------------------------------------------------------ */
+.text-gradient {
+  background-image: linear-gradient(
+    120deg,
+    theme(--color-brand-700),
+    theme(--color-brand-600),
+    theme(--color-brand-400)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* 筛选 chip 激活态 */
+.chip-active {
+  background-image: linear-gradient(
+    120deg,
+    theme(--color-brand-700),
+    theme(--color-brand-500)
+  );
+  color: white !important;
+  border-color: transparent !important;
+  box-shadow: 0 4px 14px rgb(37 99 235 / 0.32);
+}
+
+/* Hero 里的漂浮装饰气泡 */
+@keyframes float-slow {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-14px) rotate(3deg);
+  }
+}
+
+.animate-float-slow {
+  animation: float-slow 6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float-slow {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 文章排版（.prose）—— 手写中文友好排版                                */
+/* ------------------------------------------------------------------ */
+.prose {
+  line-height: 1.85;
+  font-size: 1rem;
+  color: theme(--color-zinc-700);
+}
+.dark .prose {
+  color: theme(--color-zinc-300);
+}
+
+.prose > * + * {
+  margin-top: 1.1em;
+}
+
+.prose h2,
+.prose h3,
+.prose h4 {
+  color: theme(--color-zinc-900);
+  font-weight: 600;
+  line-height: 1.4;
+  scroll-margin-top: 6rem;
+  margin-top: 2.2em;
+}
+.dark .prose h2,
+.dark .prose h3,
+.dark .prose h4 {
+  color: theme(--color-zinc-100);
+}
+
+.prose h2 {
+  font-size: 1.5rem;
+  border-bottom: 1px solid theme(--color-zinc-200);
+  padding-bottom: 0.35em;
+}
+.dark .prose h2 {
+  border-color: theme(--color-zinc-800);
+}
+
+.prose h3 {
+  font-size: 1.22rem;
+}
+
+.prose h4 {
+  font-size: 1.05rem;
+}
+
+.prose a {
+  color: theme(--color-brand-600);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: theme(--color-brand-300);
+  transition: text-decoration-color 0.15s ease;
+}
+.dark .prose a {
+  color: theme(--color-brand-400);
+  text-decoration-color: theme(--color-brand-600);
+}
+.prose a:hover {
+  text-decoration-color: theme(--color-brand-600);
+}
+.dark .prose a:hover {
+  text-decoration-color: theme(--color-brand-400);
+}
+
+.prose strong {
+  color: theme(--color-zinc-900);
+  font-weight: 600;
+}
+.dark .prose strong {
+  color: theme(--color-zinc-100);
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.4em;
+}
+
+.prose ul {
+  list-style: disc;
+}
+
+.prose ol {
+  list-style: decimal;
+}
+
+.prose li + li {
+  margin-top: 0.35em;
+}
+
+.prose li::marker {
+  color: theme(--color-brand-400);
+}
+
+.prose blockquote {
+  border-left: 3px solid theme(--color-zinc-300);
+  padding: 0.1em 0 0.1em 1.1em;
+  color: theme(--color-zinc-500);
+}
+.dark .prose blockquote {
+  border-color: theme(--color-zinc-700);
+  color: theme(--color-zinc-400);
+}
+
+.prose img {
+  border-radius: 0.6rem;
+  border: 1px solid theme(--color-zinc-200);
+}
+.dark .prose img {
+  border-color: theme(--color-zinc-800);
+}
+
+.prose hr {
+  border-color: theme(--color-zinc-200);
+  margin: 2.5em 0;
+}
+.dark .prose hr {
+  border-color: theme(--color-zinc-800);
+}
+
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+  display: block;
+  overflow-x: auto;
+}
+
+.prose th,
+.prose td {
+  border: 1px solid theme(--color-zinc-200);
+  padding: 0.5em 0.8em;
+  text-align: left;
+}
+.dark .prose th,
+.dark .prose td {
+  border-color: theme(--color-zinc-800);
+}
+
+.prose th {
+  background: theme(--color-zinc-50);
+  font-weight: 600;
+}
+.dark .prose th {
+  background: theme(--color-zinc-900);
+}
+
+/* 行内代码 */
+.prose :not(pre) > code {
+  background: theme(--color-zinc-100);
+  color: theme(--color-zinc-800);
+  border-radius: 0.3rem;
+  padding: 0.15em 0.4em;
+  font-size: 0.875em;
+  font-family: var(--font-mono);
+}
+.dark .prose :not(pre) > code {
+  background: theme(--color-zinc-800);
+  color: theme(--color-zinc-200);
+}
+
+/* ------------------------------------------------------------------ */
+/* Shiki 代码块：亮暗双主题切换                                          */
+/* ------------------------------------------------------------------ */
+.astro-code,
+.astro-code span {
+  color: var(--shiki-light);
+  background-color: var(--shiki-light-bg);
+}
+.dark .astro-code,
+.dark .astro-code span {
+  color: var(--shiki-dark);
+  background-color: var(--shiki-dark-bg);
+}
+
+.astro-code {
+  border-radius: 0.6rem;
+  border: 1px solid theme(--color-zinc-200);
+  font-size: 0.875rem;
+  line-height: 1.7;
+  padding: 1rem 1.15rem;
+}
+.dark .astro-code {
+  border-color: theme(--color-zinc-800);
+}
+
+/* KaTeX 公式块横向滚动保护 */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Callout（GitHub 风格提示块，> [!NOTE] 等语法）                        */
+/* ------------------------------------------------------------------ */
+.markdown-alert {
+  border-radius: 0.5rem;
+  border-left: 4px solid;
+  padding: 0.7rem 1rem;
+  margin: 1.2em 0;
+  background: theme(--color-zinc-50);
+}
+
+.markdown-alert .markdown-alert-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  font-weight: 600;
+  margin: 0 0 0.3em;
+  line-height: 1.4;
+}
+
+.markdown-alert > *:not(.markdown-alert-title) {
+  margin: 0;
+}
+
+.markdown-alert.markdown-alert-note {
+  border-color: #0969da;
+}
+.markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: #0969da;
+}
+
+.markdown-alert.markdown-alert-tip {
+  border-color: #1a7f37;
+}
+.markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: #1a7f37;
+}
+
+.markdown-alert.markdown-alert-important {
+  border-color: #1d4ed8;
+}
+.markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: #1d4ed8;
+}
+
+.markdown-alert.markdown-alert-warning {
+  border-color: #9a6700;
+}
+.markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: #9a6700;
+}
+
+.markdown-alert.markdown-alert-caution {
+  border-color: #cf222e;
+}
+.markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: #cf222e;
+}
+
+.dark .markdown-alert {
+  background: theme(--color-zinc-900);
+}
+
+/* ------------------------------------------------------------------ */
+/* 文章目录（TOC）滚动高亮                                               */
+/* ------------------------------------------------------------------ */
+.toc-link {
+  color: theme(--color-zinc-400);
+  border-left: 2px solid transparent;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.toc-link:hover {
+  color: theme(--color-zinc-600);
+}
+
+.dark .toc-link:hover {
+  color: theme(--color-zinc-300);
+}
+
+.toc-link.active {
+  color: theme(--color-brand-600);
+  border-left-color: theme(--color-brand-500);
+}
+
+.dark .toc-link.active {
+  color: theme(--color-brand-400);
+}
+
+/* ------------------------------------------------------------------ */
+/* 说说正文 Markdown 渲染样式（由 src/utils/markdown.ts 生成的标签）      */
+/* ------------------------------------------------------------------ */
+.markdown {
+  overflow-wrap: anywhere;
+}
+.markdown > :first-child {
+  margin-top: 0;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+.markdown p {
+  @apply my-2;
+}
+.markdown h3 {
+  @apply mt-3 mb-1.5 text-base font-semibold;
+}
+.markdown h4 {
+  @apply mt-3 mb-1 text-[15px] font-semibold;
+}
+.markdown h5,
+.markdown h6 {
+  @apply mt-2 mb-1 text-sm font-semibold;
+}
+.markdown a {
+  @apply text-brand-700 underline decoration-brand-300 underline-offset-2 hover:decoration-brand-500 dark:text-brand-300;
+}
+.markdown code {
+  @apply rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[0.85em] text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200;
+}
+.markdown pre {
+  @apply my-3 overflow-x-auto rounded-lg bg-zinc-900 p-3 text-sm text-zinc-100 dark:bg-zinc-950;
+}
+.markdown pre code {
+  @apply bg-transparent p-0 text-inherit;
+}
+.markdown blockquote {
+  @apply my-2 border-l-2 border-zinc-300 pl-3 text-zinc-500 dark:border-zinc-700 dark:text-zinc-400;
+}
+.markdown ul {
+  @apply my-2 list-disc space-y-1 pl-5;
+}
+.markdown ol {
+  @apply my-2 list-decimal space-y-1 pl-5;
+}
+.markdown hr {
+  @apply my-4 border-zinc-200 dark:border-zinc-800;
+}
+.markdown img {
+  @apply my-2 max-h-96 w-auto max-w-full rounded-lg;
+}

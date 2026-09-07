@@ -1,0 +1,249 @@
+---
+export const prerender = false;
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import ShuoPost from '@/components/shuoshuo/ShuoPost.astro';
+import ShuoInteractions from '@/components/shuoshuo/ShuoInteractions.astro';
+import ShuoBackTop from '@/components/shuoshuo/ShuoBackTop.astro';
+import QRCode from 'qrcode';
+import {
+  getPost,
+  getPostTags,
+  getReactionsMap,
+  getMyReactions,
+  listTags,
+} from '@/lib/queries';
+import { checkAuth } from '@/lib/auth';
+import { stripMarkdown } from '@/utils/markdown';
+
+const rawId = Astro.params.id;
+const id = rawId ? Number(rawId) : NaN;
+const valid = Number.isInteger(id) && id > 0;
+
+let post: Awaited<ReturnType<typeof getPost>> = null;
+let tags: string[] = [];
+let reactionsMap: Awaited<ReturnType<typeof getReactionsMap>> = new Map();
+let mine = new Set<string>();
+let allTags: { id: number; name: string }[] = [];
+let isAuthed = false;
+let gated = false;
+let pageTitle = '说说未找到';
+let description = '这条说说可能已被删除，或链接有误。';
+
+// 分享用永久链接 + 二维码（服务端生成 SVG，无客户端依赖）
+const shareUrl = Astro.url.href;
+let qrSvg = '';
+try {
+  qrSvg = await QRCode.toString(shareUrl, {
+    type: 'svg',
+    margin: 1,
+    width: 168,
+    color: { dark: '#0f172a', light: '#ffffffff' },
+  });
+} catch (e) {
+  console.error('[qr] 生成失败', e);
+}
+
+if (valid) {
+  post = await getPost(id);
+  if (post) {
+    const vid = Astro.cookies.get('vid')?.value;
+    isAuthed = checkAuth(Astro.cookies.get('session')?.value, import.meta.env.SESSION_SECRET);
+    gated = post.isPrivate === 1 && !isAuthed;
+    const [t, rm, m, at] = await Promise.all([
+      getPostTags(id),
+      getReactionsMap([id]),
+      getMyReactions(vid),
+      listTags(),
+    ]);
+    tags = t;
+    reactionsMap = rm;
+    mine = m;
+    allTags = at;
+
+    if (gated) {
+      pageTitle = '私密说说';
+      description = '这条说说已设为私密，仅博主登录后可见。';
+    } else {
+      const text = stripMarkdown(post.content).trim();
+      const firstLine = text ? text.split('\n')[0].trim() : '';
+      pageTitle = firstLine ? (firstLine.length > 30 ? firstLine.slice(0, 30) + '…' : firstLine) : '一条说说';
+      description = text
+        ? text.length > 100
+          ? text.slice(0, 100) + '…'
+          : text
+        : '来自 luqi.work 的一条随笔说说';
+    }
+  }
+}
+
+if (!post) {
+  Astro.response.status = 404;
+}
+---
+
+{
+  !post ? (
+    <BaseLayout title={pageTitle} description={description}>
+      <section class="py-20 text-center">
+        <p class="text-5xl">🔍</p>
+        <h1 class="mt-4 text-2xl font-bold text-zinc-900 dark:text-zinc-100">说说未找到</h1>
+        <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+          这条说说可能已被删除，或链接有误。
+        </p>
+        <a
+          href="/blog"
+          class="mt-6 inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700"
+        >
+          ← 返回感悟随笔
+        </a>
+      </section>
+    </BaseLayout>
+  ) : gated ? (
+    <BaseLayout title={pageTitle} description={description}>
+      <section class="py-20 text-center">
+        <p class="text-5xl">🔒</p>
+        <h1 class="mt-4 text-2xl font-bold text-zinc-900 dark:text-zinc-100">私密说说</h1>
+        <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">这条说说已设为私密，仅博主登录后可见。</p>
+        <div class="mt-6 flex items-center justify-center gap-3">
+          <a
+            href="/app/login"
+            class="inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700"
+          >
+            前往登录
+          </a>
+          <a
+            href="/blog"
+            class="inline-flex items-center gap-1.5 text-sm text-zinc-500 transition-colors hover:text-brand-700 dark:text-zinc-400 dark:hover:text-brand-300"
+          >
+            ← 返回感悟随笔
+          </a>
+        </div>
+      </section>
+    </BaseLayout>
+  ) : (
+    <BaseLayout title={pageTitle} description={description} ogType="article">
+      <section class="py-8 sm:py-12">
+        <!-- 顶部：返回 + 分享 -->
+        <div class="flex items-center justify-between gap-3">
+          <a
+            href="/blog"
+            class="inline-flex items-center gap-1.5 text-sm text-zinc-500 transition-colors hover:text-brand-700 dark:text-zinc-400 dark:hover:text-brand-300"
+          >
+            <span aria-hidden="true">←</span> 返回感悟随笔
+          </a>
+
+          <div class="relative flex items-center gap-2">
+            <span class="hidden text-xs text-zinc-400 dark:text-zinc-600 sm:inline">
+              分享给微信 / QQ 好友
+            </span>
+            <button
+              id="share-btn"
+              type="button"
+              class="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-brand-300 hover:text-brand-700 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-brand-700 dark:hover:text-brand-300"
+            >
+              <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="18" cy="5" r="3" />
+                <circle cx="6" cy="12" r="3" />
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+              </svg>
+              分享
+            </button>
+            <button
+              id="qr-btn"
+              type="button"
+              class="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-brand-300 hover:text-brand-700 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-brand-700 dark:hover:text-brand-300"
+            >
+              <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <line x1="14" y1="14" x2="21" y2="14" />
+                <line x1="14" y1="21" x2="21" y2="21" />
+                <line x1="21" y1="17" x2="21" y2="21" />
+              </svg>
+              扫码打开
+            </button>
+            <div
+              id="qr-pop"
+              class="hidden absolute right-0 top-11 z-30 w-48 rounded-xl border border-zinc-200 bg-white p-3 text-center shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+            >
+              <div class="mx-auto w-32 rounded-lg bg-white p-1" set:html={qrSvg} />
+              <p class="mt-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                用微信 / QQ「扫一扫」，在手机上打开这条说说
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 单条说说（独立卡片） -->
+        <div class="mt-6">
+          <ShuoPost
+            post={post}
+            tags={tags}
+            isAuthed={isAuthed}
+            reactions={reactionsMap.get(post.id)}
+            mine={mine}
+          />
+        </div>
+
+        <!-- 底部：再给一个返回入口 -->
+        <div class="mt-6 text-center">
+          <a
+            href="/blog"
+            class="inline-flex items-center gap-1.5 text-sm text-zinc-500 transition-colors hover:text-brand-700 dark:text-zinc-400 dark:hover:text-brand-300"
+          >
+            ← 查看全部说说
+          </a>
+        </div>
+        <!-- 右下方：回到顶部 -->
+        <div class="mt-6">
+          <ShuoBackTop />
+        </div>
+      </section>
+
+      <ShuoInteractions tags={allTags} />
+    </BaseLayout>
+  )
+}
+
+<script is:inline>
+  // 分享：移动端优先调起原生分享面板（微信/QQ 分享），不支持则回退复制链接
+  const shareBtn = document.getElementById('share-btn');
+  if (shareBtn) {
+    shareBtn.addEventListener('click', async () => {
+      const url = location.href;
+      const title = document.title || '一条说说';
+      if (navigator.share) {
+        try {
+          await navigator.share({ title, text: '来自 luqi.work 的一条说说', url });
+          return;
+        } catch (e) {
+          if (e && e.name === 'AbortError') return; // 用户取消，不回退
+        }
+      }
+      // 回退：复制链接
+      try {
+        await navigator.clipboard.writeText(url);
+        const old = shareBtn.textContent;
+        shareBtn.textContent = '已复制 ✓';
+        setTimeout(() => (shareBtn.textContent = old), 1500);
+      } catch {
+        window.prompt('复制下面的链接：', url);
+      }
+    });
+  }
+
+  // 二维码弹层：点击切换 + 点击外部关闭
+  const qrBtn = document.getElementById('qr-btn');
+  const qrPop = document.getElementById('qr-pop');
+  if (qrBtn && qrPop) {
+    qrBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      qrPop.classList.toggle('hidden');
+    });
+    document.addEventListener('click', (e) => {
+      if (!qrPop.contains(e.target) && e.target !== qrBtn) qrPop.classList.add('hidden');
+    });
+  }
+</script>

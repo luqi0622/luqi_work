@@ -1,0 +1,64 @@
+---
+import { SITE, NAV } from '@/config';
+import Header from '@/components/Header.astro';
+import Footer from '@/components/Footer.astro';
+import 'katex/dist/katex.min.css';
+import '@/styles/global.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+  /** OpenGraph 类型 */
+  ogType?: 'website' | 'article';
+}
+
+const { title, description = SITE.description, ogType = 'website' } = Astro.props;
+
+const pageTitle = title ? `${title} · ${SITE.name}` : `${SITE.name} · ${SITE.tagline}`;
+const canonical = new URL(Astro.url.pathname, SITE.url).href;
+---
+
+<!doctype html>
+<html lang="zh-CN" class="scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <meta name="author" content={SITE.author} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <link rel="alternate" type="application/rss+xml" title={SITE.title} href="/rss.xml" />
+
+    <!-- OpenGraph -->
+    <meta property="og:type" content={ogType} />
+    <meta property="og:site_name" content={SITE.name} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+
+    <!-- 主题初始化：内联执行避免闪烁（FOUC） -->
+    <script is:inline>
+      (function () {
+        const stored = localStorage.getItem('theme');
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (stored === 'dark' || (!stored && prefersDark)) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
+  </head>
+  <body
+    class="min-h-screen bg-gradient-to-b from-brand-50/50 via-white to-sky-50/30 font-sans text-zinc-700 antialiased transition-colors duration-200 dark:from-brand-950/20 dark:via-zinc-950 dark:to-brand-950/20 dark:text-zinc-300"
+  >
+    <Header nav={NAV} siteName={SITE.name} />
+    <main class="mx-auto w-full max-w-4xl px-4 sm:px-6">
+      <slot />
+    </main>
+    <Footer siteName={SITE.name} domain={SITE.domain} />
+  </body>
+</html>

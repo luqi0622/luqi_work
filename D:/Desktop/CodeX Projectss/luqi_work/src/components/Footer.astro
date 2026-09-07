@@ -1,0 +1,45 @@
+---
+import { Icon } from 'astro-icon/components';
+
+interface Props {
+  siteName: string;
+  domain: string;
+}
+
+const { siteName, domain } = Astro.props;
+const year = new Date().getFullYear();
+---
+
+<footer class="mt-20 border-t border-zinc-200/70 transition-colors dark:border-zinc-800/70">
+  <div
+    class="mx-auto flex max-w-4xl flex-col items-center justify-between gap-3 px-4 py-8 text-sm text-zinc-400 sm:flex-row sm:px-6 dark:text-zinc-500"
+  >
+    <p>© {year} {siteName} · {domain}</p>
+    <div class="flex items-center gap-4">
+      <a
+        href="/tools"
+        class="flex items-center gap-1 transition-colors hover:text-brand-500"
+        title="写新随笔 / 调整分类"
+      >
+        <Icon name="lucide:wrench" class="h-4 w-4" />
+        <span>写作工具箱</span>
+      </a>
+      <a
+        href="/rss.xml"
+        class="flex items-center gap-1 transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
+        title="RSS 订阅"
+      >
+        <Icon name="lucide:rss" class="h-4 w-4" />
+        <span>RSS</span>
+      </a>
+      <a
+        href="/sitemap-index.xml"
+        class="flex items-center gap-1 transition-colors hover:text-zinc-600 dark:hover:text-zinc-300"
+        title="站点地图"
+      >
+        <Icon name="lucide:map" class="h-4 w-4" />
+        <span>Sitemap</span>
+      </a>
+    </div>
+  </div>
+</footer>

@@ -1,0 +1,145 @@
+---
+interface Props {
+  /** 有内容的年份（降序）—— 含尚未加载的年份，点击时会自动续加载 */
+  years: number[];
+  /** 年份 → 说说条数（可选，用于悬浮提示） */
+  counts?: Map<number, number>;
+}
+const { years, counts } = Astro.props;
+---
+
+{
+  years.length > 1 && (
+    <>
+      {/* 桌面宽屏：说说左侧固定年份轨，滚动到任意位置都能切换年份 */}
+      <nav
+        data-year-timeline
+        class="fixed top-1/2 left-[max(0.75rem,calc(50%_-_33rem))] z-40 hidden -translate-y-1/2 flex-col items-start gap-0.5 rounded-2xl border border-zinc-200/70 bg-white/80 px-2 py-3 shadow-sm backdrop-blur xl:flex dark:border-zinc-800/70 dark:bg-zinc-900/70"
+        aria-label="年份时光轴"
+      >
+        {
+          years.map((y) => (
+            <button
+              type="button"
+              class="year-dot inline-flex w-full items-center gap-1.5 rounded-full py-1 pr-1.5 pl-1 text-[11px] font-medium tabular-nums transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              data-year={y}
+              title={counts?.get(y) ? `${y} 年 ${counts.get(y)} 条` : `跳到 ${y} 年`}
+              aria-label={`跳到 ${y} 年`}
+            >
+              <span class="dot h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-300 transition-all dark:bg-zinc-600" />
+              <span class="year-label text-zinc-400 transition-colors dark:text-zinc-500">{y}</span>
+            </button>
+          ))
+        }
+      </nav>
+
+      {/* 窄屏：顶部吸顶横向条 */}
+      <nav
+        data-year-timeline
+        class="sticky top-2 z-30 -mx-1 mb-4 flex items-center gap-1.5 overflow-x-auto rounded-full border border-zinc-200/70 bg-white/85 px-3 py-2 backdrop-blur xl:hidden dark:border-zinc-800/70 dark:bg-zinc-900/75"
+        aria-label="年份时光轴"
+      >
+        {
+          years.map((y) => (
+            <button
+              type="button"
+              class="year-dot inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors"
+              data-year={y}
+              aria-label={`跳到 ${y} 年`}
+            >
+              <span class="dot h-1.5 w-1.5 rounded-full bg-zinc-300 transition-all dark:bg-zinc-600" />
+              <span class="year-label text-zinc-500 dark:text-zinc-400">{y}</span>
+            </button>
+          ))
+        }
+      </nav>
+    </>
+  )
+}
+
+<script>
+  const rails = Array.from(document.querySelectorAll<HTMLElement>('[data-year-timeline]'));
+  if (rails.length) {
+    const dots = rails.flatMap((r) => Array.from(r.querySelectorAll<HTMLElement>('.year-dot')));
+
+    const paint = (year: string | number | undefined) => {
+      dots.forEach((d) => {
+        const on = d.dataset.year === String(year);
+        const dot = d.querySelector<HTMLElement>('.dot');
+        const label = d.querySelector<HTMLElement>('.year-label');
+        if (dot) {
+          dot.classList.toggle('bg-brand-500', on);
+          dot.classList.toggle('dark:bg-brand-400', on);
+          dot.classList.toggle('bg-zinc-300', !on);
+          dot.classList.toggle('dark:bg-zinc-600', !on);
+          dot.classList.toggle('scale-150', on);
+        }
+        if (label) {
+          label.classList.toggle('text-brand-700', on);
+          label.classList.toggle('font-semibold', on);
+          label.classList.toggle('dark:text-brand-300', on);
+          label.classList.toggle('text-zinc-400', !on);
+          label.classList.toggle('dark:text-zinc-500', !on);
+          label.classList.toggle('text-zinc-500', !on);
+          label.classList.toggle('dark:text-zinc-400', !on);
+        }
+      });
+    };
+
+    /** 跳到某年：若这一年还没加载（首屏只渲染最近若干条），先按需续加载 */
+    const gotoYear = async (y: string | undefined) => {
+      if (!y) return;
+      let el = document.getElementById('year-' + y);
+      if (!el && typeof (window as any).__shuoEnsureYear === 'function') {
+        await (window as any).__shuoEnsureYear(y);
+        el = document.getElementById('year-' + y);
+      }
+      // 兜底：仍没有则按游标续加载若干页
+      if (!el && typeof (window as any).__shuoLoadMore === 'function') {
+        let tries = 0;
+        while (!el && tries < 8) {
+          const ok = await (window as any).__shuoLoadMore();
+          if (!ok) break;
+          el = document.getElementById('year-' + y);
+          tries += 1;
+        }
+      }
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        paint(y);
+      }
+    };
+
+    dots.forEach((d) => {
+      d.addEventListener('click', () => {
+        void gotoYear(d.dataset.year);
+      });
+    });
+
+    const sections = Array.from(document.querySelectorAll<HTMLElement>('section[data-year]'));
+    if (sections.length) {
+      const obs = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((en) => {
+            if (en.isIntersecting) paint((en.target as HTMLElement).dataset.year);
+          });
+        },
+        { rootMargin: '-15% 0px -75% 0px', threshold: 0 }
+      );
+      sections.forEach((s) => {
+        s.dataset.observed = '1';
+        obs.observe(s);
+      });
+      // 后加载的年份区块也要纳入高亮观察
+      document.addEventListener('shuo:newyears', () => {
+        Array.from(document.querySelectorAll<HTMLElement>('section[data-year]')).forEach((s) => {
+          if (!s.dataset.observed) {
+            s.dataset.observed = '1';
+            obs.observe(s);
+          }
+        });
+      });
+      paint(sections[0].dataset.year);
+    }
+  }
+</script>

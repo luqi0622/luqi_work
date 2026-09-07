@@ -1,0 +1,71 @@
+---
+/**
+ * 按需加载「更早的说说」：返回一段可直接插入列表的 HTML 片段（年份分组）。
+ * 由 /blog 底部「加载更早随笔」与迷你时光轴（点击尚未加载的年份）调用。
+ * 查询参数：before(游标时间戳) & limit & tag & sort
+ */
+export const prerender = false;
+import ShuoPost from '@/components/shuoshuo/ShuoPost.astro';
+import { listPosts, getPostTagsMap, getReactionsMap, getMyReactions } from '@/lib/queries';
+import { checkAuth } from '@/lib/auth';
+import { formatBeijing } from '@/utils/time';
+import type { Post } from '@/lib/queries';
+
+const q = Astro.url.searchParams;
+const tag = q.get('tag') || undefined;
+const sort = q.get('sort') === 'hot' ? 'hot' : 'time';
+const before = Number(q.get('before')) || undefined;
+const limit = Math.min(Math.max(Number(q.get('limit')) || 30, 1), 60);
+const isAuthed = checkAuth(Astro.cookies.get('session')?.value, import.meta.env.SESSION_SECRET);
+
+/** year：直接取某一年（时光轴跳转用，一次取全）；否则按 before 游标取更早的一页 */
+const year = Number(q.get('year')) || undefined;
+const rows = await listPosts({
+  tag,
+  sort,
+  isAuthed,
+  before: year ? undefined : before,
+  year,
+  limit: year ? 200 : limit + 1,
+});
+const hasMore = !year && rows.length > limit;
+const slice = hasMore ? rows.slice(0, limit) : rows;
+const vid = Astro.cookies.get('vid')?.value;const [tagMap, reactionsMap, mine] = await Promise.all([
+  getPostTagsMap(),
+  getReactionsMap(slice.map((p) => p.id)),
+  getMyReactions(vid),
+]);
+
+const yearOf = (t: number) => Number(formatBeijing(t).slice(0, 4));
+const groups = new Map<number, Post[]>();
+for (const p of slice) {
+  if (p.pinned === 1) continue;
+  const y = yearOf(p.t);
+  if (!groups.has(y)) groups.set(y, []);
+  groups.get(y)!.push(p);
+}
+const years = [...groups.keys()].sort((a, b) => b - a);
+// 游标只按「非置顶」内容推进，避免老置顶帖把游标带飞
+const visible = [...groups.values()].flat();
+const nextBefore = visible.length ? Math.min(...visible.map((p) => p.t)) : 0;
+const stillMore = hasMore && nextBefore > 0;
+---
+
+<div class="more-chunk" data-next={nextBefore} data-more={stillMore ? '1' : '0'}>
+  {
+    years.map((y) => (
+      <section id={`year-${y}`} class="scroll-mt-20" data-year={y}>
+        <h2 class="-ml-5 mb-3 text-sm font-bold tracking-wide text-zinc-400 dark:text-zinc-500">{y}</h2>
+        {(groups.get(y) || []).map((p) => (
+          <ShuoPost
+            post={p}
+            tags={tagMap.get(p.id) ?? []}
+            isAuthed={isAuthed}
+            reactions={reactionsMap.get(p.id)}
+            mine={mine}
+          />
+        ))}
+      </section>
+    ))
+  }
+</div>

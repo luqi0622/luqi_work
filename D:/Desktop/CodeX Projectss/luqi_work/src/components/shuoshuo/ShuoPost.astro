@@ -1,0 +1,281 @@
+---
+import ShuoComment from './ShuoComment.astro';
+import { formatBeijing } from '@/utils/time';
+import { renderMarkdown } from '@/utils/markdown';
+import type { Post } from '@/lib/queries';
+
+interface Props {
+  post: Post;
+  tags?: string[];
+  isAuthed: boolean;
+  reactions?: Record<string, number>;
+  mine?: Set<string>;
+}
+const { post, tags = [], isAuthed, reactions, mine } = Astro.props;
+
+// 构建评论树（parentId 指向父评论 id）
+const childrenMap = new Map<number, typeof post.comments>();
+for (const c of post.comments) {
+  if (c.parentId != null) {
+    const arr = childrenMap.get(c.parentId) ?? [];
+    arr.push(c);
+    childrenMap.set(c.parentId, arr);
+  }
+}
+const roots = post.comments.filter((c) => c.parentId == null || !childrenMap.has(c.parentId));
+const hasContent = post.content.trim().length > 0;
+// 正文支持简单 Markdown（先转义再解析，安全可控）
+const contentHtml = hasContent ? renderMarkdown(post.content) : '';
+const commentEndpoint = isAuthed ? '/app/admin/comments' : `/app/shuoshuo/${post.id}/comments`;
+const counts = reactions ?? {};
+// 展示顺序：优先按数量降序，稳定的已知表情排前
+const activeEmojis = Object.keys(counts).sort((a, b) => (counts[b] ?? 0) - (counts[a] ?? 0));
+const totalReactions = activeEmojis.reduce((s, e) => s + (counts[e] ?? 0), 0);
+---
+
+<article
+  class:list={[
+    'card-hover group relative mb-4 rounded-2xl border bg-white p-4 sm:p-5 dark:bg-zinc-900/40',
+    post.isPrivate === 1
+      ? 'border-dashed border-amber-300/80 dark:border-amber-500/40'
+      : 'border-zinc-200/70 dark:border-zinc-800/70',
+  ]}
+  id={`post-${post.id}`}
+  data-post-id={post.id}
+>
+  <!-- 时间线节点 -->
+  <span class="absolute top-5 left-0 h-2.5 w-2.5 -translate-x-1/2 rounded-full border-2 border-brand-400 bg-white dark:border-brand-600 dark:bg-zinc-950"></span>
+
+  <header class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+    <time class="font-mono text-xs tracking-wide text-zinc-400 dark:text-zinc-500">{formatBeijing(post.t)}</time>
+    {
+      post.pinned === 1 && (
+        <span class="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
+          <svg class="h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 17v5" />
+            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+          </svg>
+          置顶
+        </span>
+      )
+    }
+    {
+      (post.isPrivate === 1 || isAuthed) && (
+        <div class="ml-auto flex items-center gap-2">
+          {
+            post.isPrivate === 1 && (
+              <span
+                class="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
+                title="私密说说：仅博主登录可见，游客看不到"
+              >
+                <svg class="h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+                私密
+              </span>
+            )
+          }
+
+          {
+            isAuthed && (
+              <div class="relative">
+          <details class="shuo-menu">
+            <summary class="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" aria-label="更多操作">
+              <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="5" r="1.6" />
+                <circle cx="12" cy="12" r="1.6" />
+                <circle cx="12" cy="19" r="1.6" />
+              </svg>
+            </summary>
+            <div class="absolute right-0 top-9 z-20 w-32 overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+              <button type="button" class="edit-toggle block w-full px-3 py-2 text-left text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800" data-post-id={post.id}>编辑</button>
+              <button type="button" class="pin-toggle block w-full px-3 py-2 text-left text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800" data-post-id={post.id} data-pinned={post.pinned}>置顶 / 取消</button>
+              <button type="button" class="private-toggle block w-full px-3 py-2 text-left text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800" data-post-id={post.id} data-private={post.isPrivate}>设为私密 / 取消</button>
+              <button type="button" class="tag-toggle block w-full px-3 py-2 text-left text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800" data-post-id={post.id} data-current-tags={tags.join(',')}>标签</button>
+              <button type="button" class="delete-toggle block w-full px-3 py-2 text-left text-red-500 transition-colors hover:bg-red-50 dark:hover:bg-red-500/10" data-post-id={post.id}>删除</button>
+            </div>
+          </details>
+              </div>
+            )
+          }
+        </div>
+      )
+    }
+  </header>
+
+  <!-- 正文 -->
+  {
+    hasContent ? (
+      <div
+        class="post-content markdown mt-2.5 text-[15px] leading-relaxed text-zinc-800 sm:text-base dark:text-zinc-200"
+        set:html={contentHtml}
+      />
+    ) : (
+      <p class="post-content mt-2.5 text-sm italic text-zinc-400 dark:text-zinc-600">
+        {post.pics > 0 ? `［ 仅 ${post.pics} 张配图 ］` : '［ 无正文 ］'}
+      </p>
+    )
+  }
+
+  <!-- 编辑框（默认隐藏） -->
+  <form class="edit-form hidden mt-2 flex flex-col gap-2" data-post-id={post.id}>
+    <textarea class="edit-content resize-y rounded-lg border border-zinc-200 bg-transparent px-3 py-2 text-base outline-none focus:border-brand-500 md:text-sm dark:border-zinc-800" rows="3" maxlength="2000">{post.content}</textarea>
+    <div class="flex items-center gap-2">
+      <button type="submit" class="edit-save rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-700">保存</button>
+      <button type="button" class="edit-cancel text-xs text-zinc-400 transition-colors hover:text-zinc-600">取消</button>
+      <span class="edit-msg text-xs text-red-500"></span>
+    </div>
+  </form>
+
+  {
+    post.pics > 0 && hasContent && (
+      <p class="mt-2 inline-flex items-center gap-1.5 text-xs text-zinc-400 dark:text-zinc-600">
+        <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+          <circle cx="9" cy="9" r="2" />
+          <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+        </svg>
+        配图 × {post.pics}
+      </p>
+    )
+  }
+
+  {
+    post.rt && (
+      <blockquote class="mt-2.5 border-l-2 border-zinc-300 pl-3 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+        转发：{post.rt}
+      </blockquote>
+    )
+  }
+
+  <!-- 标签 -->
+  {
+    tags.length > 0 && (
+      <div class="mt-2.5 flex flex-wrap gap-1.5">
+        {tags.map((t) => (
+          <a
+            href={`/blog?tag=${encodeURIComponent(t)}`}
+            class="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700 transition-colors hover:bg-brand-100 dark:bg-brand-500/10 dark:text-brand-300"
+          >
+            #{t}
+          </a>
+        ))}
+      </div>
+    )
+  }
+
+  <!-- 表态条：Emoji 快捷表情（Slack / 即刻 风格） -->
+  <div class="reaction-bar mt-3 flex flex-wrap items-center gap-1.5" data-reaction-bar data-post-id={post.id}>
+    {
+      activeEmojis.map((emoji) => {
+        const n = counts[emoji] ?? 0;
+        const active = mine?.has(`${post.id}:${emoji}`) ?? false;
+        return (
+          <button
+            type="button"
+            class:list={[
+              'reaction-chip inline-flex min-h-9 items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs transition-all active:scale-95',
+              active
+                ? 'border-brand-500 bg-brand-50 font-medium text-brand-700 dark:border-brand-500 dark:bg-brand-500/15 dark:text-brand-300'
+                : 'border-zinc-200 text-zinc-500 hover:border-brand-300 hover:bg-brand-50/60 hover:text-brand-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-brand-700 dark:hover:bg-brand-500/10 dark:hover:text-brand-300',
+            ]}
+            data-post-id={post.id}
+            data-kind={emoji}
+            data-active={active ? '1' : '0'}
+            aria-pressed={active ? 'true' : 'false'}
+            title="点击切换"
+          >
+            <span class="text-sm leading-none reaction-emoji" aria-hidden="true">{emoji}</span>
+            <span class:list={['reaction-count tabular-nums', n > 0 ? '' : 'hidden']} data-count={n}>{n}</span>
+          </button>
+        );
+      })
+    }
+
+    <!-- 添加表情：面板为页面级单例浮层，由 ShuoInteractions 统一渲染与定位 -->
+    <button
+      type="button"
+      class="reaction-add inline-flex h-9 w-9 items-center justify-center rounded-full border border-dashed border-zinc-300 text-zinc-400 transition-colors hover:border-brand-400 hover:text-brand-600 dark:border-zinc-700 dark:hover:border-brand-600 dark:hover:text-brand-400"
+      aria-label="添加表情"
+      data-post-id={post.id}
+    >
+      <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+        <line x1="9" y1="9" x2="9.01" y2="9" />
+        <line x1="15" y1="9" x2="15.01" y2="9" />
+      </svg>
+    </button>
+
+    {totalReactions > 0 && (
+      <span class="ml-1 text-xs text-zinc-400 dark:text-zinc-600">共 {totalReactions} 次表态</span>
+    )}
+  </div>
+
+  <!-- 评论树 -->
+  {
+    roots.length > 0 && (
+      <ul class="comment-list mt-3 space-y-2.5 border-l-2 border-zinc-200 pl-3 sm:pl-4 dark:border-zinc-800">
+        {roots.map((c) => (
+          <ShuoComment comment={c} childrenMap={childrenMap} postId={post.id} isAuthed={isAuthed} depth={1} />
+        ))}
+      </ul>
+    )
+  }
+
+  <!-- 评论入口（点击展开，移动端更友好） -->
+  <button
+    type="button"
+    class="comment-open mt-3 inline-flex min-h-9 items-center gap-1.5 rounded-full border border-zinc-200 px-3 py-1.5 text-xs text-zinc-500 transition-colors hover:border-brand-300 hover:text-brand-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-brand-700 dark:hover:text-brand-300"
+  >
+    <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+    {roots.length > 0 ? '参与回复' : '在此回复'}
+  </button>
+
+  <!-- 公开/博主 评论输入（默认收起） -->
+  <form
+    class="comment-form hidden mt-3 flex flex-col gap-2"
+    data-endpoint={commentEndpoint}
+    data-post-id={post.id}
+    data-auth={isAuthed ? 'admin' : 'guest'}
+  >
+    {
+      isAuthed ? (
+        <p class="text-xs text-zinc-400 dark:text-zinc-500">以「博主」身份留言</p>
+      ) : (
+        <p class="text-xs text-zinc-400 dark:text-zinc-500">以「匿名」身份留言，无需填写昵称</p>
+      )
+    }
+    <textarea
+      class="comment-content resize-y rounded-lg border border-zinc-200 bg-transparent px-3 py-2 text-base outline-none placeholder:text-zinc-400 focus:border-brand-500 md:text-sm dark:border-zinc-800 dark:placeholder:text-zinc-600"
+      placeholder="在此回复…"
+      rows="2"
+      maxlength="500"
+      required
+    ></textarea>
+    <input type="text" name="hp" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true" style="display:none" />
+    <div class="flex items-center gap-2">
+      <button
+        type="submit"
+        class="min-h-9 rounded-lg bg-brand-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-700"
+      >发布</button>
+      <button type="button" class="comment-close px-2 text-xs text-zinc-400 transition-colors hover:text-zinc-600">收起</button>
+      <span class="comment-msg text-xs text-red-500"></span>
+    </div>
+  </form>
+</article>
+
+<style>
+  .reaction-chip.pop .reaction-emoji,
+  .reaction-chip.pop .reaction-count {
+    animation: reaction-pop 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  @keyframes reaction-pop {
+    0% { transform: scale(1); }
+    45% { transform: scale(1.32); }
+    100% { transform: scale(1); }
+  }
+</style>

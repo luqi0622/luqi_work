@@ -1,0 +1,27 @@
+# 构建产物
+dist/
+.vercel/
+public/tianyuanFood/
+
+# 依赖
+node_modules/
+
+# 环境与密钥
+.env
+.env.local
+.env.production
+
+# 编辑器与系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# WorkBuddy 工作数据
+.workbuddy/
+
+# 本地临时部署/验证脚本（含 cookie，勿提交）
+.ck.txt
+.push_api.mjs
+.verify_deploy.mjs
+build.log
