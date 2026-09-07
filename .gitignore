@@ -24,3 +24,4 @@ Thumbs.db
 .ck.txt
 .push_api.mjs
 .verify_deploy.mjs
+build.log

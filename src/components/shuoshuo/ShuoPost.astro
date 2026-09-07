@@ -32,7 +32,12 @@ const totalReactions = activeEmojis.reduce((s, e) => s + (counts[e] ?? 0), 0);
 ---
 
 <article
-  class="card-hover group relative mb-4 rounded-2xl border border-zinc-200/70 bg-white p-4 sm:p-5 dark:border-zinc-800/70 dark:bg-zinc-900/40"
+  class:list={[
+    'card-hover group relative mb-4 rounded-2xl border bg-white p-4 sm:p-5 dark:bg-zinc-900/40',
+    post.isPrivate === 1
+      ? 'border-dashed border-amber-300/80 dark:border-amber-500/40'
+      : 'border-zinc-200/70 dark:border-zinc-800/70',
+  ]}
   id={`post-${post.id}`}
   data-post-id={post.id}
 >
@@ -53,20 +58,26 @@ const totalReactions = activeEmojis.reduce((s, e) => s + (counts[e] ?? 0), 0);
       )
     }
     {
-      post.isPrivate === 1 && (
-        <span class="inline-flex items-center gap-1 rounded bg-zinc-100 px-1.5 py-0.5 text-xs font-medium text-zinc-500 dark:bg-zinc-700/40 dark:text-zinc-400" title="仅博主登录可见">
-          <svg class="h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
-            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-          </svg>
-          私密
-        </span>
-      )
-    }
+      (post.isPrivate === 1 || isAuthed) && (
+        <div class="ml-auto flex items-center gap-2">
+          {
+            post.isPrivate === 1 && (
+              <span
+                class="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
+                title="私密说说：仅博主登录可见，游客看不到"
+              >
+                <svg class="h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+                私密
+              </span>
+            )
+          }
 
-    {
-      isAuthed && (
-        <div class="relative ml-auto">
+          {
+            isAuthed && (
+              <div class="relative">
           <details class="shuo-menu">
             <summary class="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" aria-label="更多操作">
               <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
@@ -83,6 +94,9 @@ const totalReactions = activeEmojis.reduce((s, e) => s + (counts[e] ?? 0), 0);
               <button type="button" class="delete-toggle block w-full px-3 py-2 text-left text-red-500 transition-colors hover:bg-red-50 dark:hover:bg-red-500/10" data-post-id={post.id}>删除</button>
             </div>
           </details>
+              </div>
+            )
+          }
         </div>
       )
     }

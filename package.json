@@ -25,6 +25,7 @@
     "astro": "^5.13.0",
     "astro-icon": "^1.1.5",
     "katex": "^0.16.22",
+    "qrcode": "^1.5.4",
     "rehype-katex": "^7.0.1",
     "remark-github-blockquote-alert": "^2.0.0",
     "remark-math": "^6.0.0",

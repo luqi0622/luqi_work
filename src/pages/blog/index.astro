@@ -6,6 +6,7 @@ import ShuoCompose from '@/components/shuoshuo/ShuoCompose.astro';
 import ShuoTags from '@/components/shuoshuo/ShuoTags.astro';
 import ShuoInteractions from '@/components/shuoshuo/ShuoInteractions.astro';
 import ShuoYearTimeline from '@/components/shuoshuo/ShuoYearTimeline.astro';
+import ShuoBackTop from '@/components/shuoshuo/ShuoBackTop.astro';
 import {
   listPosts,
   listTags,
@@ -18,8 +19,13 @@ import { formatBeijing } from '@/utils/time';
 
 const tag = Astro.url.searchParams.get('tag') ?? undefined;
 const sort = Astro.url.searchParams.get('sort') === 'hot' ? 'hot' : 'time';
-const [posts, tags, tagMap] = await Promise.all([listPosts({ tag, sort }), listTags(), getPostTagsMap()]);
 const isAuthed = checkAuth(Astro.cookies.get('session')?.value, import.meta.env.SESSION_SECRET);
+// 博主登录时列表包含私密说说（卡片右上角会标注私密），游客永远看不到
+const [posts, tags, tagMap] = await Promise.all([
+  listPosts({ tag, sort, isAuthed }),
+  listTags(),
+  getPostTagsMap(),
+]);
 
 // 表态：匿名访客标识存在 vid cookie 中（随机串，非个人信息）
 const vid = Astro.cookies.get('vid')?.value;
@@ -138,4 +144,5 @@ const years = [...yearMap.keys()].sort((a, b) => b - a);
   </section>
 </BaseLayout>
 
+<ShuoBackTop />
 <ShuoInteractions tags={tags} />

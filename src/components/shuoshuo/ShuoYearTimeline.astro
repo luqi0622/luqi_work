@@ -8,74 +8,95 @@ const { years } = Astro.props;
 
 {
   years.length > 1 && (
-    <nav
-      class="year-timeline sticky top-2 z-30 -mx-1 mb-4 flex items-center gap-1.5 overflow-x-auto rounded-full border border-zinc-200/70 bg-white/85 px-3 py-2 backdrop-blur dark:border-zinc-800/70 dark:bg-zinc-900/75"
-      aria-label="年份时光轴"
-    >
-      {
-        years.map((y, i) => (
-          <span class="inline-flex items-center gap-1.5">
+    <>
+      {/* 桌面宽屏：说说左侧固定年份轨，滚动到任意位置都能切换年份 */}
+      <nav
+        data-year-timeline
+        class="fixed top-1/2 left-[max(0.75rem,calc(50%_-_33rem))] z-40 hidden -translate-y-1/2 flex-col items-start gap-0.5 rounded-full border border-zinc-200/60 bg-white/70 px-2 py-3 backdrop-blur xl:flex dark:border-zinc-800/60 dark:bg-zinc-900/60"
+        aria-label="年份时光轴"
+      >
+        {
+          years.map((y) => (
+            <button
+              type="button"
+              class="year-dot inline-flex items-center gap-1.5 rounded-full py-1 pl-0.5 pr-1.5 text-[11px] font-medium transition-colors"
+              data-year={y}
+              aria-label={`跳到 ${y} 年`}
+            >
+              <span class="dot h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-300 transition-all dark:bg-zinc-600"></span>
+              <span class="year-label tabular-nums text-zinc-400 transition-colors dark:text-zinc-500">{y}</span>
+            </button>
+          ))
+        }
+      </nav>
+
+      {/* 窄屏 / 移动端：顶部吸顶横向年份条 */}
+      <nav
+        data-year-timeline
+        class="year-timeline sticky top-2 z-30 -mx-1 mb-4 flex items-center gap-1.5 overflow-x-auto rounded-full border border-zinc-200/70 bg-white/85 px-3 py-2 backdrop-blur xl:hidden dark:border-zinc-800/70 dark:bg-zinc-900/75"
+        aria-label="年份时光轴"
+      >
+        {
+          years.map((y) => (
             <button
               type="button"
               class="year-dot inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-1 text-xs font-medium transition-colors"
               data-year={y}
               aria-label={`跳到 ${y} 年`}
             >
-              <span class="dot h-1.5 w-1.5 rounded-full bg-zinc-300 transition-colors dark:bg-zinc-600"></span>
-              <span class="year-label text-zinc-500 dark:text-zinc-400">{y}</span>
+              <span class="dot h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-300 transition-all dark:bg-zinc-600"></span>
+              <span class="year-label tabular-nums text-zinc-500 transition-colors dark:text-zinc-400">{y}</span>
             </button>
-          </span>
-        ))
-      }
-    </nav>
+          ))
+        }
+      </nav>
+    </>
   )
 }
 
 <script>
-  const root = document.querySelector('.year-timeline');
-  if (root) {
-    const dots = Array.from(root.querySelectorAll<HTMLElement>('.year-dot'));
+  const rails = Array.from(document.querySelectorAll<HTMLElement>('[data-year-timeline]'));
+  if (rails.length) {
+    const dots = rails.flatMap((r) => Array.from(r.querySelectorAll<HTMLElement>('.year-dot')));
+
+    const paint = (year: string | undefined) => {
+      dots.forEach((d) => {
+        const on = d.dataset.year === year;
+        const dot = d.querySelector<HTMLElement>('.dot');
+        const label = d.querySelector<HTMLElement>('.year-label');
+        dot?.classList.toggle('bg-brand-500', on);
+        dot?.classList.toggle('dark:bg-brand-400', on);
+        dot?.classList.toggle('scale-125', on);
+        dot?.classList.toggle('bg-zinc-300', !on);
+        dot?.classList.toggle('dark:bg-zinc-600', !on);
+        label?.classList.toggle('text-brand-700', on);
+        label?.classList.toggle('dark:text-brand-300', on);
+        label?.classList.toggle('font-semibold', on);
+        label?.classList.toggle('text-zinc-400', !on);
+        label?.classList.toggle('dark:text-zinc-500', !on);
+      });
+    };
+
     dots.forEach((d) => {
       d.addEventListener('click', () => {
         const el = document.getElementById('year-' + d.dataset.year);
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        paint(d.dataset.year);
       });
     });
-    const sections = dots
-      .map((d) => document.getElementById('year-' + d.dataset.year))
-      .filter((s): s is HTMLElement => !!s);
+
+    // 滚动高亮：以视口上方 15%~30% 区间命中的年份为当前年
+    const sections = Array.from(document.querySelectorAll<HTMLElement>('[data-year]'));
     if (sections.length) {
       const obs = new IntersectionObserver(
         (entries) => {
-          entries.forEach((en) => {
-            if (!en.isIntersecting) return;
-            const y = en.target.dataset.year;
-            dots.forEach((d) => {
-              const on = d.dataset.year === y;
-              const dot = d.querySelector<HTMLElement>('.dot');
-              const label = d.querySelector<HTMLElement>('.year-label');
-              d.classList.toggle('opacity-100', true);
-              dot?.classList.toggle('bg-brand-500', on);
-              dot?.classList.toggle('bg-zinc-300', !on);
-              dot?.classList.toggle('dark:bg-brand-400', on);
-              dot?.classList.toggle('dark:bg-zinc-600', !on);
-              label?.classList.toggle('text-brand-700', on);
-              label?.classList.toggle('font-semibold', on);
-              label?.classList.toggle('text-zinc-500', !on);
-              label?.classList.toggle('dark:text-brand-300', on);
-              label?.classList.toggle('dark:text-zinc-400', !on);
-            });
-          });
+          const hit = entries.filter((e) => e.isIntersecting).pop();
+          if (hit) paint((hit.target as HTMLElement).dataset.year);
         },
-        { rootMargin: '-15% 0px -75% 0px', threshold: 0 }
+        { rootMargin: '-15% 0px -70% 0px', threshold: 0 }
       );
       sections.forEach((s) => obs.observe(s));
-      // 初始高亮第一个可见年份
-      if (sections[0]) {
-        const firstDot = dots.find((d) => d.dataset.year === sections[0].dataset.year);
-        firstDot?.querySelector<HTMLElement>('.dot')?.classList.add('bg-brand-500', 'dark:bg-brand-400');
-        firstDot?.querySelector<HTMLElement>('.year-label')?.classList.add('text-brand-700', 'font-semibold', 'dark:text-brand-300');
-      }
+      paint(sections[0].dataset.year);
     }
   }
 </script>
