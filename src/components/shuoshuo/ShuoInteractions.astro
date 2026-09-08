@@ -18,7 +18,7 @@ const { tags, emojis = REACTION_EMOJIS } = Astro.props;
     <input
       id="tag-modal-new"
       type="text"
-      placeholder="输入新标签后回车"
+      placeholder="输入新标签，回车或直接保存（可用逗号分隔多个）"
       class="mt-3 w-full rounded-lg border border-zinc-200 bg-transparent px-3 py-2 text-base outline-none focus:border-brand-500 md:text-sm dark:border-zinc-800 dark:placeholder:text-zinc-600"
     />
     <div class="mt-4 flex justify-end gap-2">
@@ -62,6 +62,7 @@ const { tags, emojis = REACTION_EMOJIS } = Astro.props;
 
   function openModal() {
     if (!modal) return;
+    if (modalNew) modalNew.value = '';
     modal.classList.remove('hidden');
     modal.classList.add('flex');
   }
@@ -484,18 +485,38 @@ const { tags, emojis = REACTION_EMOJIS } = Astro.props;
     for (const n of fresh) buildChip(n, true);
   }
 
+  /** 收编输入框里的新标签：支持逗号/顿号分隔多个；返回是否新增了内容 */
+  function flushTagInput() {
+    if (!modalNew) return false;
+    const raw = modalNew.value.trim();
+    if (!raw) return false;
+    const parts = raw.split(/[,，、\s]+/).map((s) => s.trim()).filter(Boolean);
+    let added = false;
+    for (const v of parts) {
+      if (v && !modalSelected.includes(v)) { modalSelected.push(v); added = true; }
+    }
+    modalNew.value = '';
+    return added;
+  }
+
   if (modalNew) {
     modalNew.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+      // 中文输入法选词时的回车不处理，交给输入法
+      if (e.key === 'Enter' && !e.isComposing) {
         e.preventDefault();
-        const v = modalNew.value.trim();
-        if (v && !modalSelected.includes(v)) { modalSelected.push(v); modalNew.value = ''; renderTagModal(); }
+        if (flushTagInput()) renderTagModal();
       }
     });
   }
   document.getElementById('tag-modal-cancel')?.addEventListener('click', closeModal);
   document.getElementById('tag-modal-save')?.addEventListener('click', async () => {
     if (modalPostId == null) return;
+    // 关键：没按回车直接点保存时，也要把输入框里的新标签带上
+    flushTagInput();
+    renderTagModal();
+    const btn = document.getElementById('tag-modal-save');
+    const oldText = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
     try {
       const res = await fetch(`/app/admin/posts/${modalPostId}`, {
         method: 'PATCH',
@@ -503,9 +524,42 @@ const { tags, emojis = REACTION_EMOJIS } = Astro.props;
         body: JSON.stringify({ tagNames: modalSelected }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ok) { location.reload(); }
-      else alert(data.error || '保存失败');
+      if (res.ok && data.ok) {
+        applyTagsToCard(modalPostId, Array.isArray(data.tags) ? data.tags : modalSelected);
+        closeModal();
+      } else {
+        alert(data.error || '保存失败');
+      }
     } catch { alert('网络错误'); }
+    if (btn) { btn.disabled = false; btn.textContent = oldText || '保存'; }
   });
+
+  /** 就地更新某条说说的标签展示，不整页刷新（保留滚动位置与已加载的说说） */
+  function applyTagsToCard(postId, tagNames) {
+    // 1) 卡片上的标签 chip（页面上可能有列表页/详情页多个位置）
+    const boxes = document.querySelectorAll(`[data-post-tags="${postId}"]`);
+    boxes.forEach((box) => {
+      box.innerHTML = '';
+      box.className = tagNames.length > 0 ? 'mt-2.5 flex flex-wrap gap-1.5' : 'hidden mt-2.5 flex-wrap gap-1.5';
+      for (const t of tagNames) {
+        const a = document.createElement('a');
+        a.href = `/blog?tag=${encodeURIComponent(t)}`;
+        a.className = 'rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700 transition-colors hover:bg-brand-100 dark:bg-brand-500/10 dark:text-brand-300';
+        a.textContent = '#' + t;
+        box.appendChild(a);
+      }
+    });
+    // 2) 菜单按钮里的当前标签（下次打开弹窗时预勾选）
+    document.querySelectorAll(`button.tag-toggle[data-post-id="${postId}"]`).forEach((btn) => {
+      btn.dataset.currentTags = tagNames.join(',');
+    });
+    // 3) 顶部标签列表（__SHUO_TAGS__）补上新标签，供后续弹窗渲染
+    if (Array.isArray(window.__SHUO_TAGS__)) {
+      const known = new Set(window.__SHUO_TAGS__.map((t) => t.name));
+      for (const n of tagNames) {
+        if (!known.has(n)) window.__SHUO_TAGS__.push({ id: 0, name: n });
+      }
+    }
+  }
   modal?.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
 </script>

@@ -149,21 +149,17 @@ const totalReactions = activeEmojis.reduce((s, e) => s + (counts[e] ?? 0), 0);
     )
   }
 
-  <!-- 标签 -->
-  {
-    tags.length > 0 && (
-      <div class="mt-2.5 flex flex-wrap gap-1.5">
-        {tags.map((t) => (
-          <a
-            href={`/blog?tag=${encodeURIComponent(t)}`}
-            class="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700 transition-colors hover:bg-brand-100 dark:bg-brand-500/10 dark:text-brand-300"
-          >
-            #{t}
-          </a>
-        ))}
-      </div>
-    )
-  }
+  <!-- 标签（data-post-tags 供保存后就地更新，无需整页刷新） -->
+  <div data-post-tags={post.id} class={tags.length > 0 ? 'mt-2.5 flex flex-wrap gap-1.5' : 'hidden mt-2.5 flex-wrap gap-1.5'}>
+    {tags.map((t) => (
+      <a
+        href={`/blog?tag=${encodeURIComponent(t)}`}
+        class="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700 transition-colors hover:bg-brand-100 dark:bg-brand-500/10 dark:text-brand-300"
+      >
+        #{t}
+      </a>
+    ))}
+  </div>
 
   <!-- 表态条：Emoji 快捷表情（Slack / 即刻 风格） -->
   <div class="reaction-bar mt-3 flex flex-wrap items-center gap-1.5" data-reaction-bar data-post-id={post.id}>

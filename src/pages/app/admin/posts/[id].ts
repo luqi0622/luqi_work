@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { updatePost, softDeletePost, restorePost, setPostTags } from '../../../../lib/queries';
+import { updatePost, softDeletePost, restorePost, setPostTags, getPostTags } from '../../../../lib/queries';
 
 export const prerender = false;
 
@@ -54,7 +54,11 @@ export const PATCH: APIRoute = async ({ params, request }) => {
       return badRequest('tagNames 必须为字符串数组');
     }
     await setPostTags(id, body.tagNames as string[]);
-    updated = true;
+    // 回传保存后的标签，前端可就地更新卡片（避免整页刷新导致丢失滚动位置/已加载内容）
+    const tags = await getPostTags(id);
+    return new Response(JSON.stringify({ ok: true, tags }), {
+      headers: { 'content-type': 'application/json' },
+    });
   }
 
   if (!updated) return badRequest('没有可更新的字段');
