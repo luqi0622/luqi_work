@@ -1,0 +1,1675 @@
+---
+/**
+ * 逻辑电路实验台
+ *
+ * 纯前端工具：拖拽门电路 → 连线 → 实时看真值表与布尔表达式
+ * 逻辑引擎在 src/lib/logic/（纯函数，可单测），画布控制器是 LogicBench
+ */
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import { Icon } from 'astro-icon/components';
+
+const GATES = [
+  { kind: 'AND', label: '与门', hint: '全 1 才 1' },
+  { kind: 'OR', label: '或门', hint: '有 1 就 1' },
+  { kind: 'NOT', label: '非门', hint: '取反' },
+  { kind: 'NAND', label: '与非', hint: '与门取反' },
+  { kind: 'NOR', label: '或非', hint: '或门取反' },
+  { kind: 'XOR', label: '异或', hint: '不同为 1' },
+  { kind: 'XNOR', label: '同或', hint: '相同为 1' },
+];
+---
+
+<BaseLayout
+  title="逻辑电路实验台"
+  description="拖拽门电路、连线，实时生成真值表与布尔表达式。适合数字逻辑入门与调试。"
+  wide
+  flush
+>
+  <div class="pt-8 pb-10">
+    <!-- ============ 页头 ============ -->
+    <header class="mb-5 flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <h1
+          class="flex items-center gap-2.5 font-display text-2xl tracking-tight text-zinc-900 sm:text-3xl dark:text-zinc-100"
+        >
+          <Icon name="lucide:circuit-board" class="h-7 w-7 text-brand-400" />
+          逻辑电路实验台
+        </h1>
+        <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+          把门拖到画布上，从输出圆点拉线到下一个输入圆点。电路一变，真值表和表达式立刻跟着变。
+        </p>
+      </div>
+
+      <!-- 工具栏 -->
+      <div class="flex flex-wrap items-center gap-1.5">
+        <button
+          type="button"
+          data-act="undo"
+          title="撤销 (Ctrl+Z)"
+          class="lc-btn"
+          disabled
+        >
+          <Icon name="lucide:rotate-ccw" class="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          data-act="redo"
+          title="重做 (Ctrl+Shift+Z)"
+          class="lc-btn"
+          disabled
+        >
+          <Icon name="lucide:rotate-cw" class="h-4 w-4" />
+        </button>
+        <span class="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-800"></span>
+        <button type="button" data-act="preset" title="载入示例电路" class="lc-btn">
+          <Icon name="lucide:book-open" class="h-4 w-4" />
+          <span class="hidden sm:inline">示例</span>
+        </button>
+        <button type="button" data-act="custom" title="自定义黑盒元件" class="lc-btn">
+          <Icon name="lucide:square-pen" class="h-4 w-4" />
+          <span class="hidden sm:inline">黑盒</span>
+        </button>
+        <button type="button" data-act="import" title="导入电路 JSON" class="lc-btn">
+          <Icon name="lucide:upload" class="h-4 w-4" />
+        </button>
+        <button type="button" data-act="export" title="导出电路 JSON" class="lc-btn">
+          <Icon name="lucide:download" class="h-4 w-4" />
+        </button>
+        <button type="button" data-act="clear" title="清空画布" class="lc-btn lc-btn-danger">
+          <Icon name="lucide:trash-2" class="h-4 w-4" />
+        </button>
+      </div>
+    </header>
+
+    <!-- ============ 主体三栏 ============ -->
+    <div class="lc-grid grid gap-4 lg:grid-cols-[186px_minmax(0,1fr)_312px]">
+      <!-- 左：元件面板 -->
+      <!-- 三栏都必须是 grid 的直接子元素且带 min-w-0，
+           否则窄屏下 grid item 会按内容宽度撑开，整页横向溢出 -->
+      <aside
+        class="lc-panel order-2 min-w-0 lg:order-1 lg:sticky lg:top-20 lg:self-start"
+        aria-label="元件库"
+      >
+        <h2 class="lc-panel-title">
+          <Icon name="lucide:boxes" class="h-3.5 w-3.5" />
+          元件库
+        </h2>
+
+        <p class="lc-hint mb-3 hidden lg:block">拖到画布上</p>
+
+        <div class="lc-palette" id="palette">
+          {
+            GATES.map((g) => (
+              <div
+                class="lc-chip"
+                draggable="true"
+                data-gate={g.kind}
+                title={`${g.label} —— ${g.hint}`}
+              >
+                <span class="lc-chip-glyph" data-glyph={g.kind.toLowerCase()} />
+                <span class="lc-chip-text">
+                  <b>{g.label}</b>
+                  <i>{g.hint}</i>
+                </span>
+              </div>
+            ))
+          }
+
+          <div class="lc-chip-sep"></div>
+
+          <div class="lc-chip" draggable="true" data-gate="INPUT" title="输入变量 A / B / C…">
+            <span class="lc-chip-glyph" data-glyph="input"></span>
+            <span class="lc-chip-text"><b>输入</b><i>可固定为 0/1</i></span>
+          </div>
+          <div class="lc-chip" draggable="true" data-gate="CONST" title="常量 0 或 1">
+            <span class="lc-chip-glyph" data-glyph="const"></span>
+            <span class="lc-chip-text"><b>常量</b><i>接 0 或 1</i></span>
+          </div>
+          <div class="lc-chip" draggable="true" data-gate="DFF" title="D 触发器，本工具按组合元件处理：Q = D">
+            <span class="lc-chip-glyph" data-glyph="dff"></span>
+            <span class="lc-chip-text"><b>D 触发器</b><i>Q = D，可出 /Q</i></span>
+          </div>
+          <div class="lc-chip" draggable="true" data-gate="OUTPUT" title="输出探针，真值表的每一列">
+            <span class="lc-chip-glyph" data-glyph="output"></span>
+            <span class="lc-chip-text"><b>输出</b><i>真值表的一列</i></span>
+          </div>
+          <button type="button" class="lc-chip is-btn" data-act="custom">
+            <span class="lc-chip-glyph" data-glyph="custom"></span>
+            <span class="lc-chip-text"><b>自定义黑盒</b><i>自己填真值表</i></span>
+          </button>
+
+          <div id="custom-list" class="contents"></div>
+        </div>
+      </aside>
+
+      <!-- 中：画布 -->
+      <section class="order-1 lg:order-2 flex flex-col gap-3 min-w-0">
+        <div
+          class="lc-panel overflow-hidden !p-0"
+          aria-label="电路画布"
+        >
+          <!-- 画布头部工具条 -->
+          <div class="lc-canvas-bar">
+            <span class="lc-status" id="status">
+              <span class="lc-dot"></span>
+              <span id="status-text">就绪</span>
+            </span>
+            <div class="flex items-center gap-1">
+              <button type="button" data-act="zoom-out" title="缩小" class="lc-btn lc-btn-sm">
+                <Icon name="lucide:zoom-out" class="h-3.5 w-3.5" />
+              </button>
+              <span class="lc-zoom" id="zoom-label">100%</span>
+              <button type="button" data-act="zoom-in" title="放大" class="lc-btn lc-btn-sm">
+                <Icon name="lucide:zoom-in" class="h-3.5 w-3.5" />
+              </button>
+              <button type="button" data-act="fit" title="缩放到刚好装下" class="lc-btn lc-btn-sm">
+                <Icon name="lucide:maximize" class="h-3.5 w-3.5" />
+              </button>
+              <button type="button" data-act="reset-view" title="回到默认视角" class="lc-btn lc-btn-sm">
+                <Icon name="lucide:crosshair" class="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <!-- 画布本体（LogicBench 挂载点） -->
+          <div class="lc-canvas-wrap">
+            <div id="canvas"></div>
+            <div class="lc-empty" id="canvas-empty" hidden>
+              <Icon name="lucide:mouse-pointer-click" class="h-5 w-5" />
+              从左侧拖一个「输入」元件进来开始
+            </div>
+            <p class="lc-mobile-tip">手机上可双指缩放、拖动平移，连线建议用「先点输出圆点，再点输入圆点」</p>
+          </div>
+        </div>
+
+        <!-- 检视面板（选中节点后编辑） -->
+        <div class="lc-panel" id="inspector" aria-live="polite">
+          <h2 class="lc-panel-title">
+            <Icon name="lucide:sliders-horizontal" class="h-3.5 w-3.5" />
+            检视
+          </h2>
+          <div id="inspector-body">
+            <p class="lc-hint">点画布上的元件，这里可以改名字、调输入端口数、固定输入值。</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右：真值表 + 表达式 -->
+      <aside class="order-3 flex flex-col gap-4 min-w-0" aria-label="真值表与表达式">
+        <!-- 逐步演示 -->
+        <div class="lc-panel">
+          <h2 class="lc-panel-title">
+            <Icon name="lucide:step-forward" class="h-3.5 w-3.5" />
+            逐步演示
+          </h2>
+          <p class="lc-hint mb-3">一行一行走，看信号怎么在电路里传</p>
+          <div class="lc-transport">
+            <button type="button" data-act="first" title="回到第一行" class="lc-btn lc-btn-sm">
+              <Icon name="lucide:skip-back" class="h-3.5 w-3.5" />
+            </button>
+            <button type="button" data-act="prev" title="上一行" class="lc-btn lc-btn-sm">
+              <Icon name="lucide:step-back" class="h-3.5 w-3.5" />
+            </button>
+            <button type="button" data-act="play" title="播放 / 暂停" class="lc-btn lc-btn-primary">
+              <Icon name="lucide:play" class="h-4 w-4" id="play-icon" />
+              <span id="play-label" class="text-xs font-medium">播放</span>
+            </button>
+            <button type="button" data-act="next" title="下一行" class="lc-btn lc-btn-sm">
+              <Icon name="lucide:step-forward" class="h-3.5 w-3.5" />
+            </button>
+            <select id="speed" class="lc-select" title="播放速度" aria-label="播放速度">
+              <option value="1400">0.5×</option>
+              <option value="700" selected>1×</option>
+              <option value="350">2×</option>
+              <option value="150">4×</option>
+            </select>
+          </div>
+          <p class="lc-hint mt-2" id="row-indicator">共 0 行</p>
+        </div>
+
+        <!-- 真值表 -->
+        <div class="lc-panel">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <h2 class="lc-panel-title mb-0">
+              <Icon name="lucide:table-2" class="h-3.5 w-3.5" />
+              真值表
+            </h2>
+            <span class="lc-badge" id="tt-badge"></span>
+          </div>
+          <div class="lc-table-wrap" id="tt-wrap">
+            <p class="lc-hint">先放几个输入和输出元件。</p>
+          </div>
+        </div>
+
+        <!-- 布尔表达式 -->
+        <div class="lc-panel">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <h2 class="lc-panel-title mb-0">
+              <Icon name="lucide:sigma" class="h-3.5 w-3.5" />
+              布尔表达式
+            </h2>
+            <button type="button" data-act="copy-expr" title="复制表达式" class="lc-btn lc-btn-sm">
+              <Icon name="lucide:copy" class="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          <label class="lc-switch mb-3">
+            <input type="checkbox" id="dm-toggle" />
+            <span>德摩根归一化<em>把取反全推到输入端</em></span>
+          </label>
+
+          <div id="expr-body">
+            <p class="lc-hint">连好电路后这里会显示推导出的表达式。</p>
+          </div>
+          <p class="lc-verify" id="verify" hidden></p>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- ============ 示例电路弹窗 ============ -->
+  <dialog id="dlg-preset" class="lc-dlg">
+    <form method="dialog" class="lc-dlg-inner">
+      <h3 class="lc-dlg-title">载入示例电路</h3>
+      <p class="lc-hint mb-3">会覆盖当前画布内容（可以用撤销找回）。</p>
+      <div id="preset-list" class="lc-dlg-list"></div>
+      <div class="lc-dlg-foot">
+        <button type="button" class="lc-btn" data-close>取消</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ============ 自定义黑盒弹窗 ============ -->
+  <dialog id="dlg-custom" class="lc-dlg">
+    <form method="dialog" class="lc-dlg-inner lc-dlg-wide">
+      <h3 class="lc-dlg-title">自定义黑盒元件</h3>
+      <p class="lc-hint mb-3">
+        填一张真值表，就多一个自己的元件。存在浏览器本地（localStorage），刷新不丢，也能导出备份。
+      </p>
+
+      <div class="lc-form-grid">
+        <label class="lc-field">
+          <span>元件名称</span>
+          <input type="text" id="cx-name" placeholder="例如：2:1 选择器" maxlength="24" />
+        </label>
+        <label class="lc-field">
+          <span>输入端口数</span>
+          <select id="cx-in">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+        </label>
+        <label class="lc-field">
+          <span>输出端口数</span>
+          <select id="cx-out">
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+          </select>
+        </label>
+      </div>
+
+      <p class="lc-hint mt-3 mb-1">真值表（点格子切换 0 / 1）</p>
+      <div class="lc-tt-editor" id="cx-table"></div>
+
+      <p class="lc-error" id="cx-error" hidden></p>
+
+      <div class="lc-dlg-foot">
+        <button type="button" class="lc-btn" id="cx-export">导入库</button>
+        <button type="button" class="lc-btn" id="cx-import">导入库</button>
+        <span class="flex-1"></span>
+        <button type="button" class="lc-btn" data-close>取消</button>
+        <button type="button" class="lc-btn lc-btn-primary" id="cx-save">保存元件</button>
+      </div>
+
+      <div class="lc-dlg-sep"></div>
+      <h4 class="lc-dlg-subtitle">已保存的元件</h4>
+      <div id="cx-list" class="lc-dlg-list"></div>
+    </form>
+  </dialog>
+
+  <!-- ============ Toast ============ -->
+  <div id="toast" class="lc-toast" hidden></div>
+</BaseLayout>
+
+<style is:global>
+  /* ==================================================================
+     逻辑电路实验台 —— 画布专属样式
+     布局/面板/按钮用 Tailwind；这里只放Tailwind 表达不了的：
+     门元件形状、网格背景、连线动画、端口命中区
+     （不用 Astro scoped：画布节点是 JS 运行时创建的，scoped 选择器打不中）
+     ================================================================== */
+
+  .lc-panel {
+    border-radius: 1rem;
+    border: 1px solid rgb(228 228 231 / 0.7);
+    background: #fff;
+    padding: 0.875rem;
+  }
+  .dark .lc-panel {
+    border-color: rgb(39 39 42 / 0.7);
+    background: rgb(24 24 27);
+  }
+
+  .lc-panel-title {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-family: var(--font-display);
+    font-size: 0.9375rem;
+    color: #18181b;
+    margin-bottom: 0.625rem;
+  }
+  .dark .lc-panel-title {
+    color: #f4f4f5;
+  }
+
+  .lc-hint {
+    font-size: 0.6875rem;
+    line-height: 1.6;
+    color: #71717a;
+  }
+  .dark .lc-hint {
+    color: #a1a1aa;
+  }
+
+  .lc-badge {
+    font-size: 0.6875rem;
+    padding: 0.125rem 0.4375rem;
+    border-radius: 9999px;
+    background: rgb(239 246 255);
+    color: #1d4ed8;
+    white-space: nowrap;
+  }
+  .dark .lc-badge {
+    background: rgb(30 58 138 / 0.35);
+    color: #93c5fd;
+  }
+
+  /* ---------- 按钮 ---------- */
+  .lc-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 0.625rem;
+    border: 1px solid rgb(228 228 231);
+    background: #fff;
+    padding: 0.375rem 0.5rem;
+    font-size: 0.75rem;
+    color: #52525b;
+    cursor: pointer;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease;
+  }
+  .lc-btn:hover:not(:disabled) {
+    border-color: #93c5fd;
+    color: #1d4ed8;
+    background: #eff6ff;
+  }
+  .dark .lc-btn {
+    border-color: #3f3f46;
+    background: #27272a;
+    color: #d4d4d8;
+  }
+  .dark .lc-btn:hover:not(:disabled) {
+    border-color: #1d4ed8;
+    color: #93c5fd;
+    background: rgb(30 58 138 / 0.25);
+  }
+  .lc-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .lc-btn-sm {
+    padding: 0.25rem 0.375rem;
+  }
+  .lc-btn-primary {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #fff;
+  }
+  .lc-btn-primary:hover:not(:disabled) {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+    color: #fff;
+  }
+  .dark .lc-btn-primary:hover:not(:disabled) {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: #fff;
+  }
+  .lc-btn-danger:hover:not(:disabled) {
+    border-color: #fca5a5;
+    color: #dc2626;
+    background: #fef2f2;
+  }
+  .dark .lc-btn-danger:hover:not(:disabled) {
+    border-color: #7f1d1d;
+    color: #fca5a5;
+    background: rgb(127 29 29 / 0.25);
+  }
+
+  .lc-select {
+    border-radius: 0.5rem;
+    border: 1px solid rgb(228 228 231);
+    background: #fff;
+    padding: 0.25rem 0.375rem;
+    font-size: 0.75rem;
+    color: #52525b;
+    cursor: pointer;
+  }
+  .dark .lc-select {
+    border-color: #3f3f46;
+    background: #27272a;
+    color: #d4d4d8;
+  }
+
+  /* 三栏 grid：所有直接子元素都必须 min-w-0，
+     否则 grid item 会被内容（真值表、KaTeX、长公式）撑开，整页横向溢出 */
+  .lc-grid > * {
+    min-width: 0;
+  }
+
+  /* ---------- 元件面板 ---------- */
+  .lc-palette {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+  .lc-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 0.625rem;
+    border: 1px solid rgb(228 228 231);
+    background: #fff;
+    padding: 0.4375rem 0.5rem;
+    cursor: grab;
+    user-select: none;
+    transition:
+      border-color 0.15s ease,
+      background 0.15s ease,
+      transform 0.15s ease;
+  }
+  .lc-chip:hover {
+    border-color: #93c5fd;
+    background: #eff6ff;
+    transform: translateX(2px);
+  }
+  .dark .lc-chip {
+    border-color: #3f3f46;
+    background: #27272a;
+  }
+  .dark .lc-chip:hover {
+    border-color: #1d4ed8;
+    background: rgb(30 58 138 / 0.25);
+  }
+  .lc-chip:active {
+    cursor: grabbing;
+  }
+  .lc-chip.is-btn {
+    width: 100%;
+    font: inherit;
+    text-align: left;
+  }
+  .lc-chip-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+    min-width: 0;
+  }
+  .lc-chip-text b {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #3f3f46;
+  }
+  .dark .lc-chip-text b {
+    color: #e4e4e7;
+  }
+  .lc-chip-text i {
+    font-size: 0.625rem;
+    font-style: normal;
+    color: #a1a1aa;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lc-chip-sep {
+    height: 1px;
+    background: rgb(228 228 231);
+    margin: 0.25rem 0;
+  }
+  .dark .lc-chip-sep {
+    background: #3f3f46;
+  }
+  .lc-chip.is-del {
+    cursor: pointer;
+    border-style: dashed;
+  }
+
+  /* ==================================================================
+     门符号 —— 纯CSS 画的逻辑门图形（IEC/ANSI 风格简化）
+     用 clip-path + 伪元素做，不用 SVG 以便跟着主题变色
+     ================================================================== */
+  .lc-chip-glyph {
+    position: relative;
+    width: 30px;
+    height: 20px;
+    flex: none;
+    --ink: #52525b;
+  }
+  .dark .lc-chip-glyph {
+    --ink: #d4d4d8;
+  }
+
+  /* 与门：左侧方、右侧半圆（平边在右） */
+  .lc-chip-glyph[data-glyph='and']::before,
+  .lc-node[data-glyph='and']::before,
+  .lc-chip-glyph[data-glyph='nand']::before,
+  .lc-node[data-glyph='nand']::before {
+    content: '';
+    position: absolute;
+    inset: 1px 1px 1px 2px;
+    border: 1.5px solid var(--ink);
+    border-radius: 0 999px 999px 0 / 0 50% 50% 0;
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+  }
+  /* 与非：加输出端小圈 */
+  .lc-chip-glyph[data-glyph='nand']::after,
+  .lc-node[data-glyph='nand']::after {
+    content: '';
+    position: absolute;
+    right: -1px;
+    top: 50%;
+    width: 5px;
+    height: 5px;
+    margin-top: -2.5px;
+    border: 1.5px solid var(--ink);
+    border-radius: 999px;
+    background: #fff;
+  }
+  .dark .lc-chip-glyph[data-glyph='nand']::after,
+  .dark .lc-node[data-glyph='nand']::after {
+    background: #18181b;
+  }
+
+  /* 或门：左凹弧 + 右凸弧
+     做法：整块先画成「右边半圆」的形状，
+     再用 box-shadow 的负偏移在内侧叠一条同色弧线补出左边的凹 */
+  .lc-chip-glyph[data-glyph='or']::before,
+  .lc-node[data-glyph='or']::before,
+  .lc-chip-glyph[data-glyph='nor']::before,
+  .lc-node[data-glyph='nor']::before,
+  .lc-chip-glyph[data-glyph='xor']::before,
+  .lc-node[data-glyph='xor']::before,
+  .lc-chip-glyph[data-glyph='xnor']::before,
+  .lc-node[data-glyph='xnor']::before {
+    content: '';
+    position: absolute;
+    inset: 1px 1px 1px 5px;
+    border: 1.5px solid var(--ink);
+    border-radius: 0 999px 999px 0 / 0 50% 50% 0;
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+  }
+  .lc-chip-glyph[data-glyph='nor']::after,
+  .lc-node[data-glyph='nor']::after,
+  .lc-chip-glyph[data-glyph='xnor']::after,
+  .lc-node[data-glyph='xnor']::after {
+    content: '';
+    position: absolute;
+    right: -1px;
+    top: 50%;
+    width: 5px;
+    height: 5px;
+    margin-top: -2.5px;
+    border: 1.5px solid var(--ink);
+    border-radius: 999px;
+    background: #fff;
+  }
+  .dark .lc-chip-glyph[data-glyph='nor']::after,
+  .dark .lc-node[data-glyph='nor']::after,
+  .dark .lc-chip-glyph[data-glyph='xnor']::after,
+  .dark .lc-node[data-glyph='xnor']::after {
+    background: #18181b;
+  }
+  /* 异或 / 同或：左侧多一条输入弧线 */
+  .lc-chip-glyph[data-glyph='xor'],
+  .lc-node[data-glyph='xor'],
+  .lc-chip-glyph[data-glyph='xnor'],
+  .lc-node[data-glyph='xnor'] {
+    --or-gap: 5px;
+  }
+  .lc-chip-glyph[data-glyph='xor']::before,
+  .lc-node[data-glyph='xor']::before,
+  .lc-chip-glyph[data-glyph='xnor']::before,
+  .lc-node[data-glyph='xnor']::before {
+    box-shadow: -5px 0 0 -1px transparent;
+  }
+
+  /* 非门：三角形 + 输出圈 */
+  .lc-chip-glyph[data-glyph='not']::before,
+  .lc-node[data-glyph='not']::before {
+    content: '';
+    position: absolute;
+    inset: 1px 4px 1px 2px;
+    border: 1.5px solid var(--ink);
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+    clip-path: polygon(0 0, 100% 50%, 0 100%);
+  }
+  .lc-chip-glyph[data-glyph='not']::after,
+  .lc-node[data-glyph='not']::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 50%;
+    width: 5px;
+    height: 5px;
+    margin-top: -2.5px;
+    border: 1.5px solid var(--ink);
+    border-radius: 999px;
+    background: #fff;
+  }
+  .dark .lc-chip-glyph[data-glyph='not']::after,
+  .dark .lc-node[data-glyph='not']::after {
+    background: #18181b;
+  }
+
+  /* 输入 / 输出：圆形端子 */
+  .lc-chip-glyph[data-glyph='input']::before,
+  .lc-chip-glyph[data-glyph='const']::before,
+  .lc-chip-glyph[data-glyph='output']::before {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 50%;
+    width: 15px;
+    height: 15px;
+    margin-top: -7.5px;
+    border: 1.5px solid var(--ink);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--ink) 10%, transparent);
+  }
+  /* 输出端子加一道横线进去，表示「引出」 */
+  .lc-chip-glyph[data-glyph='output']::after,
+  .lc-chip-glyph[data-glyph='const']::after {
+    content: '';
+    position: absolute;
+    left: 17px;
+    top: 50%;
+    width: 11px;
+    height: 1.5px;
+    margin-top: -0.75px;
+    background: var(--ink);
+  }
+  /* 常量里写 0/1 */
+  .lc-chip-glyph[data-glyph='const'] {
+    --ink: #2563eb;
+  }
+  .dark .lc-chip-glyph[data-glyph='const'] {
+    --ink: #60a5fa;
+  }
+  .lc-chip-glyph[data-glyph='const']::after {
+    display: none;
+  }
+  .lc-chip-glyph[data-glyph='const']::before {
+    content: '0';
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--ink);
+    width: 16px;
+    height: 16px;
+    left: 2px;
+    margin-top: -8px;
+  }
+
+  /* D 触发器：方框 + 右上角时钟斜杠 */
+  .lc-chip-glyph[data-glyph='dff']::before,
+  .lc-node[data-glyph='dff']::before {
+    content: '';
+    position: absolute;
+    inset: 1px 1px 1px 2px;
+    border: 1.5px solid var(--ink);
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+  }
+  .lc-chip-glyph[data-glyph='dff']::after,
+  .lc-node[data-glyph='dff']::after {
+    content: '';
+    position: absolute;
+    right: 4px;
+    top: 3px;
+    width: 6px;
+    height: 7px;
+    border-top: 1.5px solid var(--ink);
+    border-right: 1.5px solid var(--ink);
+    transform: skewY(-28deg);
+  }
+
+  /* 自定义黑盒：虚线方框 */
+  .lc-chip-glyph[data-glyph='custom']::before,
+  .lc-node[data-glyph='custom']::before {
+    content: '?';
+    position: absolute;
+    inset: 1px 1px 1px 2px;
+    border: 1.5px dashed var(--ink);
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  /* ---------- 画布上的门：图形 + 文字标签 ---------- */
+  .lc-node[data-glyph] {
+    --ink: #a1a1aa;
+  }
+  .lc-node[data-glyph='and'],
+  .lc-node[data-glyph='or'],
+  .lc-node[data-glyph='xor'],
+  .lc-node[data-glyph='xnor'],
+  .lc-node[data-glyph='nand'],
+  .lc-node[data-glyph='nor'],
+  .lc-node[data-glyph='not'],
+  .lc-node[data-glyph='dff'],
+  .lc-node[data-glyph='custom'] {
+    --ink: #71717a;
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+  .dark .lc-node[data-glyph='and'],
+  .dark .lc-node[data-glyph='or'],
+  .dark .lc-node[data-glyph='xor'],
+  .dark .lc-node[data-glyph='xnor'],
+  .dark .lc-node[data-glyph='nand'],
+  .dark .lc-node[data-glyph='nor'],
+  .dark .lc-node[data-glyph='not'],
+  .dark .lc-node[data-glyph='dff'],
+  .dark .lc-node[data-glyph='custom'] {
+    --ink: #a1a1aa;
+  }
+  .lc-node[data-glyph='and']::before,
+  .lc-node[data-glyph='or']::before,
+  .lc-node[data-glyph='xor']::before,
+  .lc-node[data-glyph='xnor']::before,
+  .lc-node[data-glyph='nand']::before,
+  .lc-node[data-glyph='nor']::before,
+  .lc-node[data-glyph='not']::before,
+  .lc-node[data-glyph='dff']::before,
+  .lc-node[data-glyph='custom']::before {
+    inset: 4px 5px;
+  }
+  .lc-node[data-glyph='nand']::after,
+  .lc-node[data-glyph='nor']::after,
+  .lc-node[data-glyph='xnor']::after,
+  .lc-node[data-glyph='not']::after,
+  .lc-node[data-glyph='dff']::after {
+    right: 3px;
+  }
+  /* 选中 / 环路态：门图形本身染色 + 外圈光晕 */
+  .lc-node[data-glyph].is-selected {
+    --ink: #2563eb;
+    filter: drop-shadow(0 0 5px rgb(37 99 235 / 0.45));
+  }
+  .dark .lc-node[data-glyph].is-selected {
+    --ink: #60a5fa;
+  }
+  .lc-node[data-glyph].is-cycle {
+    --ink: #ef4444;
+    background: rgb(254 242 242);
+  }
+  .dark .lc-node[data-glyph].is-cycle {
+    --ink: #f87171;
+    background: rgb(127 29 29 / 0.25);
+  }
+  /* 门上的文字压在图形中央：加粗 + 白描边，避免被线条糊住 */
+  .lc-node[data-glyph] .lc-node-head {
+    position: relative;
+    z-index: 1;
+    font-weight: 600;
+    font-size: 0.625rem;
+    letter-spacing: -0.01em;
+    paint-order: stroke fill;
+    -webkit-text-stroke: 3px #fff;
+    text-shadow: 0 0 4px #fff;
+  }
+  .dark .lc-node[data-glyph] .lc-node-head {
+    -webkit-text-stroke: 3px #18181b;
+    text-shadow: 0 0 4px #18181b;
+  }
+  /* 门图形元件本身不可选中背景，靠图形形状表达 */
+  .lc-node[data-glyph]:hover {
+    --ink: #2563eb;
+  }
+  .dark .lc-node[data-glyph]:hover {
+    --ink: #93c5fd;
+  }
+
+  /* ---------- 画布 ---------- */
+  .lc-canvas-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border-bottom: 1px solid rgb(228 228 231);
+    padding: 0.375rem 0.5rem;
+  }
+  .dark .lc-canvas-bar {
+    border-color: #27272a;
+  }
+  .lc-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.6875rem;
+    color: #71717a;
+    min-width: 0;
+  }
+  .lc-status > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lc-status .lc-dot {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: #22c55e;
+  }
+  .lc-status.is-warn .lc-dot {
+    background: #f59e0b;
+  }
+  .lc-status.is-err .lc-dot {
+    background: #ef4444;
+  }
+  .lc-zoom {
+    font-size: 0.6875rem;
+    color: #a1a1aa;
+    min-width: 2.75rem;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .lc-canvas-wrap {
+    position: relative;
+  }
+  /* #canvas 是 bench 的挂载点，bench 会往里塞 .lc-viewport > .lc-vp
+     这条链每一环都必须显式有高度，否则内部所有 getBoundingClientRect 都读到 0 */
+  #canvas,
+  .lc-viewport,
+  .lc-vp {
+    height: 480px;
+  }
+  @media (max-width: 1023px) {
+    #canvas,
+    .lc-viewport,
+    .lc-vp {
+      height: 54vh;
+      min-height: 320px;
+    }
+  }
+
+  .lc-viewport {
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    /* 双层网格，background-size 由 JS 按缩放同步 */
+    background-image:
+      linear-gradient(to right, rgb(191 219 254 / 0.35) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(191 219 254 / 0.35) 1px, transparent 1px),
+      linear-gradient(to right, rgb(147 197 253 / 0.4) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(147 197 253 / 0.4) 1px, transparent 1px);
+    background-size:
+      var(--lc-grid, 24px) var(--lc-grid, 24px),
+      var(--lc-grid, 24px) var(--lc-grid, 24px),
+      var(--lc-grid2, 120px) var(--lc-grid2, 120px),
+      var(--lc-grid2, 120px) var(--lc-grid2, 120px);
+    background-color: #fafafa;
+    touch-action: none;
+    cursor: grab;
+  }
+  .dark .lc-viewport {
+    background-image:
+      linear-gradient(to right, rgb(63 63 70 / 0.4) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(63 63 70 / 0.4) 1px, transparent 1px),
+      linear-gradient(to right, rgb(82 82 91 / 0.55) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(82 82 91 / 0.55) 1px, transparent 1px);
+    background-color: #09090b;
+  }
+  .lc-viewport.is-panning {
+    cursor: grabbing;
+  }
+
+  .lc-world {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+  .lc-wires {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: visible;
+    pointer-events: none;
+  }
+  .lc-nodes {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+
+  /* ---------- 连线 ---------- */
+  .lc-wire {
+    fill: none;
+    stroke: #a1a1aa;
+    stroke-width: 2;
+    stroke-linecap: round;
+    pointer-events: none;
+    transition: stroke 0.15s ease;
+  }
+  .dark .lc-wire {
+    stroke: #71717a;
+  }
+  .lc-wire.is-selected {
+    stroke: #2563eb;
+    stroke-width: 3;
+  }
+  .dark .lc-wire.is-selected {
+    stroke: #60a5fa;
+  }
+  .lc-wire.is-temp {
+    stroke: #60a5fa;
+    stroke-dasharray: 5 4;
+  }
+  /* playhead：信号为 1 的线流动起来 */
+  .lc-wire.is-hot {
+    stroke: #2563eb;
+    stroke-width: 3;
+    stroke-dasharray: 7 5;
+    animation: lc-flow 0.55s linear infinite;
+  }
+  .dark .lc-wire.is-hot {
+    stroke: #60a5fa;
+  }
+  @keyframes lc-flow {
+    to {
+      stroke-dashoffset: -12;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .lc-wire.is-hot {
+      animation: none;
+    }
+  }
+
+  /* 加粗的透明命中层，让细线也好点 */
+  .lc-wire-hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 16;
+    pointer-events: stroke;
+    cursor: pointer;
+  }
+
+  /* ---------- 元件 ---------- */
+  .lc-node {
+    position: absolute;
+    border-radius: 0.5rem;
+    border: 1.5px solid rgb(212 212 216);
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    user-select: none;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+    transition:
+      border-color 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  .dark .lc-node {
+    border-color: #3f3f46;
+    background: #27272a;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  }
+  .lc-node:active {
+    cursor: grabbing;
+  }
+  .lc-node:hover {
+    border-color: #93c5fd;
+  }
+  .lc-node.is-selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgb(37 99 235 / 0.18);
+  }
+  .dark .lc-node.is-selected {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgb(59 130 246 / 0.25);
+  }
+  /* 环路：无法求值 */
+  .lc-node.is-cycle {
+    border-color: #ef4444;
+    background: #fef2f2;
+  }
+  .dark .lc-node.is-cycle {
+    border-color: #dc2626;
+    background: rgb(127 29 29 / 0.25);
+  }
+  .lc-node.is-pinned {
+    opacity: 0.62;
+    border-style: dashed;
+  }
+
+  .lc-node-head {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: #3f3f46;
+    pointer-events: none;
+    text-align: center;
+    padding: 0 0.5rem;
+    line-height: 1.2;
+  }
+  .dark .lc-node-head {
+    color: #e4e4e7;
+  }
+
+  /* 值徽标 */
+  /* 值徽标放左下角：门图形（与非/或非/非/同或）的输出气泡在右上角，会撞车 */
+  .lc-node-val {
+    position: absolute;
+    bottom: -8px;
+    left: -6px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 18px;
+    text-align: center;
+    pointer-events: none;
+  }
+  .lc-node-val.v1 {
+    background: #2563eb;
+    color: #fff;
+    box-shadow: 0 0 0 2px #fff;
+  }
+  .dark .lc-node-val.v1 {
+    background: #3b82f6;
+    box-shadow: 0 0 0 2px #18181b;
+  }
+  .lc-node-val.v0 {
+    background: #e4e4e7;
+    color: #71717a;
+    box-shadow: 0 0 0 2px #fff;
+  }
+  .dark .lc-node-val.v0 {
+    background: #3f3f46;
+    color: #a1a1aa;
+    box-shadow: 0 0 0 2px #18181b;
+  }
+
+  /* ---------- 端口 ---------- */
+  .lc-port {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    margin: -6px 0 0 -6px;
+    border-radius: 9999px;
+    border: 2px solid #fff;
+    background: #a1a1aa;
+    cursor: crosshair;
+    z-index: 2;
+    transition:
+      transform 0.12s ease,
+      background 0.12s ease;
+  }
+  .dark .lc-port {
+    border-color: #18181b;
+    background: #71717a;
+  }
+  .lc-port:hover {
+    transform: scale(1.35);
+    background: #2563eb;
+  }
+  .lc-port-in {
+    /* 未连接：空心 + 虚线提示 */
+    background: #fff;
+    border-color: #a1a1aa;
+  }
+  .dark .lc-port-in {
+    background: #18181b;
+    border-color: #71717a;
+  }
+  .lc-port-in.is-open {
+    background: #fff;
+    border-style: dashed;
+    border-color: #d4d4d6;
+  }
+  .dark .lc-port-in.is-open {
+    background: #18181b;
+    border-color: #52525b;
+  }
+  .lc-port-out {
+    background: #2563eb;
+  }
+  .dark .lc-port-out {
+    background: #60a5fa;
+  }
+  /* 加大视觉命中区（不改变视觉大小） */
+  .lc-port::after {
+    content: '';
+    position: absolute;
+    inset: -7px;
+    border-radius: 9999px;
+  }
+
+  /* ---------- 空画布提示 ---------- */
+  .lc-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    color: #a1a1aa;
+    pointer-events: none;
+  }
+  .lc-mobile-tip {
+    display: none;
+  }
+  @media (max-width: 1023px) {
+    .lc-mobile-tip {
+      display: block;
+      padding: 0.375rem 0.625rem;
+      font-size: 0.6875rem;
+      color: #a1a1aa;
+      border-top: 1px solid rgb(228 228 231);
+    }
+    .dark .lc-mobile-tip {
+      border-color: #27272a;
+    }
+  }
+
+  /* ---------- 播放控制 ---------- */
+  .lc-transport {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .lc-transport .lc-btn-primary {
+    flex: 1;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  /* ---------- 真值表 ---------- */
+  .lc-table-wrap {
+    overflow-x: auto;
+    max-height: 300px;
+    overflow-y: auto;
+    border-radius: 0.5rem;
+    border: 1px solid rgb(228 228 231);
+  }
+  .dark .lc-table-wrap {
+    border-color: #27272a;
+  }
+  .lc-table-wrap table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .lc-table-wrap thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f4f4f5;
+    color: #52525b;
+    font-weight: 500;
+    padding: 0.3125rem 0.5rem;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .dark .lc-table-wrap thead th {
+    background: #27272a;
+    color: #d4d4d8;
+  }
+  .lc-table-wrap thead th.is-input {
+    color: #1d4ed8;
+  }
+  .dark .lc-table-wrap thead th.is-input {
+    color: #93c5fd;
+  }
+  .lc-table-wrap thead th.is-output {
+    color: #059669;
+  }
+  .dark .lc-table-wrap thead th.is-output {
+    color: #34d399;
+  }
+  .lc-table-wrap tbody td {
+    padding: 0.25rem 0.5rem;
+    text-align: center;
+    border-top: 1px solid rgb(228 228 231 / 0.8);
+    color: #3f3f46;
+  }
+  .dark .lc-table-wrap tbody td {
+    border-color: rgb(39 39 42 / 0.8);
+    color: #d4d4d8;
+  }
+  .lc-table-wrap tbody tr.is-current td {
+    background: rgb(219 234 254 / 0.6);
+    font-weight: 500;
+  }
+  .dark .lc-table-wrap tbody tr.is-current td {
+    background: rgb(30 58 138 / 0.35);
+  }
+  .lc-table-wrap tbody tr {
+    cursor: pointer;
+  }
+  .lc-table-wrap tbody tr:hover td {
+    background: rgb(244 244 245);
+  }
+  .dark .lc-table-wrap tbody tr:hover td {
+    background: rgb(39 39 42 / 0.6);
+  }
+  .td-in {
+    color: #a1a1aa !important;
+  }
+  .td-out {
+    font-weight: 600;
+    color: #059669 !important;
+  }
+  .dark .td-out {
+    color: #34d399 !important;
+  }
+  .lc-divider {
+    border-left: 2px solid rgb(228 228 231) !important;
+  }
+  .dark .lc-divider {
+    border-color: #3f3f46 !important;
+  }
+
+  /* ---------- 表达式 ---------- */
+  .lc-expr {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.75;
+    color: #3f3f46;
+    word-break: break-word;
+  }
+  .dark .lc-expr {
+    color: #e4e4e7;
+  }
+  .lc-expr-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.125rem 0;
+  }
+  .lc-expr-lhs {
+    flex: none;
+    color: #2563eb;
+    font-weight: 600;
+    min-width: 3.25rem;
+  }
+  .dark .lc-expr-lhs {
+    color: #60a5fa;
+  }
+  .lc-expr-terms {
+    border-radius: 0.5rem;
+    background: #f4f4f5;
+    padding: 0.5rem 0.625rem;
+    margin-bottom: 0.5rem;
+  }
+  .dark .lc-expr-terms {
+    background: #27272a;
+  }
+  .lc-verify {
+    margin-top: 0.625rem;
+    font-size: 0.6875rem;
+    line-height: 1.6;
+  }
+  .lc-verify.is-ok {
+    color: #059669;
+  }
+  .lc-verify.is-bad {
+    color: #dc2626;
+  }
+  .lc-katex {
+    margin-top: 0.5rem;
+    font-size: 0.8125rem;
+    overflow-x: auto;
+  }
+
+  /* ---------- 开关 ---------- */
+  .lc-switch {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: #52525b;
+  }
+  .dark .lc-switch {
+    color: #d4d4d8;
+  }
+  .lc-switch input {
+    accent-color: #2563eb;
+    width: 15px;
+    height: 15px;
+    cursor: pointer;
+  }
+  .lc-switch em {
+    display: block;
+    font-style: normal;
+    font-size: 0.625rem;
+    color: #a1a1aa;
+  }
+
+  /* ---------- 检视面板 ---------- */
+  .lc-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 0.5rem;
+  }
+  .lc-field {
+    display: block;
+  }
+  .lc-field > span {
+    display: block;
+    font-size: 0.6875rem;
+    color: #71717a;
+    margin-bottom: 0.25rem;
+  }
+  .dark .lc-field > span {
+    color: #a1a1aa;
+  }
+  .lc-field input[type='text'],
+  .lc-field input[type='number'],
+  .lc-field select {
+    width: 100%;
+    border-radius: 0.5rem;
+    border: 1px solid rgb(228 228 231);
+    background: #fff;
+    padding: 0.3125rem 0.5rem;
+    font-size: 0.75rem;
+    color: #3f3f46;
+  }
+  .dark .lc-field input[type='text'],
+  .dark .lc-field input[type='number'],
+  .dark .lc-field select {
+    border-color: #3f3f46;
+    background: #18181b;
+    color: #e4e4e7;
+  }
+  .lc-field-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.3125rem 0;
+  }
+  .lc-field-row > span {
+    font-size: 0.75rem;
+    color: #52525b;
+  }
+  .dark .lc-field-row > span {
+    color: #d4d4d8;
+  }
+  .lc-node-meta {
+    font-size: 0.6875rem;
+    color: #a1a1aa;
+    margin-bottom: 0.5rem;
+  }
+
+  /* ---------- 弹窗 ---------- */
+  .lc-dlg {
+    border: none;
+    border-radius: 1rem;
+    padding: 0;
+    background: transparent;
+    max-width: min(92vw, 460px);
+    width: 100%;
+  }
+  .lc-dlg-wide {
+    max-width: min(94vw, 620px);
+  }
+  .lc-dlg::backdrop {
+    background: rgb(9 9 11 / 0.5);
+    backdrop-filter: blur(2px);
+  }
+  .lc-dlg-inner {
+    border-radius: 1rem;
+    border: 1px solid rgb(228 228 231);
+    background: #fff;
+    padding: 1rem;
+  }
+  .dark .lc-dlg-inner {
+    border-color: #3f3f46;
+    background: #18181b;
+  }
+  .lc-dlg-title {
+    font-family: var(--font-display);
+    font-size: 1.0625rem;
+    color: #18181b;
+    margin-bottom: 0.25rem;
+  }
+  .dark .lc-dlg-title {
+    color: #f4f4f5;
+  }
+  .lc-dlg-subtitle {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #3f3f46;
+    margin-bottom: 0.5rem;
+  }
+  .dark .lc-dlg-subtitle {
+    color: #e4e4e7;
+  }
+  .lc-dlg-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    max-height: 240px;
+    overflow-y: auto;
+  }
+  .lc-dlg-item {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    border-radius: 0.625rem;
+    border: 1px solid rgb(228 228 231);
+    background: #fff;
+    padding: 0.5rem 0.625rem;
+    text-align: left;
+    cursor: pointer;
+  }
+  .dark .lc-dlg-item {
+    border-color: #3f3f46;
+    background: #27272a;
+  }
+  .lc-dlg-item:hover {
+    border-color: #93c5fd;
+  }
+  .lc-dlg-item-body {
+    flex: 1;
+    min-width: 0;
+  }
+  .lc-dlg-item b {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #27272a;
+  }
+  .dark .lc-dlg-item b {
+    color: #f4f4f5;
+  }
+  .lc-dlg-item span {
+    font-size: 0.6875rem;
+    color: #a1a1aa;
+  }
+  .lc-dlg-foot {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-top: 0.875rem;
+  }
+  .lc-dlg-sep {
+    height: 1px;
+    background: rgb(228 228 231);
+    margin: 1rem 0 0.75rem;
+  }
+  .dark .lc-dlg-sep {
+    background: #27272a;
+  }
+  .lc-error {
+    margin-top: 0.5rem;
+    font-size: 0.6875rem;
+    color: #dc2626;
+  }
+
+  /* ---------- 真值表编辑器 ---------- */
+  .lc-tt-editor {
+    max-height: 220px;
+    overflow-y: auto;
+    border-radius: 0.5rem;
+    border: 1px solid rgb(228 228 231);
+  }
+  .dark .lc-tt-editor {
+    border-color: #27272a;
+  }
+  .lc-tt-editor table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .lc-tt-editor th {
+    position: sticky;
+    top: 0;
+    background: #f4f4f5;
+    color: #52525b;
+    font-weight: 500;
+    padding: 0.25rem 0.375rem;
+  }
+  .dark .lc-tt-editor th {
+    background: #27272a;
+    color: #d4d4d8;
+  }
+  .lc-tt-editor td {
+    padding: 0.1875rem;
+    text-align: center;
+    border-top: 1px solid rgb(228 228 231 / 0.8);
+  }
+  .dark .lc-tt-editor td {
+    border-color: rgb(39 39 42 / 0.8);
+  }
+  .lc-tt-editor td.row-head {
+    font-family: var(--font-mono);
+    color: #a1a1aa;
+    white-space: nowrap;
+    padding: 0.1875rem 0.5rem;
+    text-align: left;
+  }
+  .lc-tt-cell {
+    cursor: pointer;
+    border-radius: 0.3125rem;
+    display: block;
+    padding: 0.1875rem 0;
+    transition: background 0.12s ease;
+    user-select: none;
+  }
+  .lc-tt-cell:hover {
+    background: rgb(219 234 254 / 0.6);
+  }
+  .lc-tt-cell.is-1 {
+    background: #2563eb;
+    color: #fff;
+    font-weight: 600;
+  }
+  .dark .lc-tt-cell.is-1 {
+    background: #3b82f6;
+  }
+
+  /* ---------- Toast ---------- */
+  .lc-toast {
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 60;
+    border-radius: 0.75rem;
+    border: 1px solid rgb(228 228 231);
+    background: #fff;
+    padding: 0.5rem 0.875rem;
+    font-size: 0.8125rem;
+    color: #3f3f46;
+    box-shadow: 0 12px 28px -10px rgb(15 23 42 / 0.28);
+    animation: lc-toast-in 0.2s ease;
+  }
+  .dark .lc-toast {
+    border-color: #3f3f46;
+    background: #27272a;
+    color: #e4e4e7;
+  }
+  .lc-toast.is-err {
+    border-color: #fca5a5;
+    color: #dc2626;
+  }
+  .dark .lc-toast.is-err {
+    border-color: #7f1d1d;
+    color: #fca5a5;
+  }
+  @keyframes lc-toast-in {
+    from {
+      opacity: 0;
+      transform: translate(-50%, 8px);
+    }
+  }
+
+  /* ---------- 移动端：元件面板变横向抽屉 ---------- */
+  @media (max-width: 1023px) {
+    .lc-palette {
+      flex-direction: row;
+      overflow-x: auto;
+      padding-bottom: 0.25rem;
+      scrollbar-width: none;
+    }
+    .lc-palette::-webkit-scrollbar {
+      display: none;
+    }
+    .lc-chip {
+      flex: none;
+      width: 9.5rem;
+    }
+    .lc-chip:hover {
+      transform: none;
+    }
+    .lc-chip-sep {
+      width: 1px;
+      height: auto;
+      margin: 0.25rem 0;
+      flex: none;
+    }
+  }
+</style>
+
+<script>
+  import '@/lib/logic/ui';
+</script>
