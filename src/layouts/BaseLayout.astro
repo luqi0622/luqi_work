@@ -14,10 +14,21 @@ interface Props {
   wide?: boolean;
   /** 去掉上下留白（工具页自己控制留白） */
   flush?: boolean;
+  /**
+   * 裸布局：去掉 Header / Footer / body 渐变 / <main> 内边距，
+   * 只保留主题初始化脚本与 global.css。给「全屏工作台」类页面用。
+   */
+  bare?: boolean;
 }
 
-const { title, description = SITE.description, ogType = 'website', wide = false, flush = false } =
-  Astro.props;
+const {
+  title,
+  description = SITE.description,
+  ogType = 'website',
+  wide = false,
+  flush = false,
+  bare = false,
+} = Astro.props;
 
 const pageTitle = title ? `${title} · ${SITE.name}` : `${SITE.name} · ${SITE.tagline}`;
 const canonical = new URL(Astro.url.pathname, SITE.url).href;
@@ -58,18 +69,29 @@ const canonical = new URL(Astro.url.pathname, SITE.url).href;
     </script>
   </head>
   <body
-    class="min-h-screen bg-gradient-to-b from-brand-50/50 via-white to-sky-50/30 font-sans text-zinc-700 antialiased transition-colors duration-200 dark:from-brand-950/20 dark:via-zinc-950 dark:to-brand-950/20 dark:text-zinc-300"
+    class:list={[
+      'font-sans text-zinc-700 antialiased transition-colors duration-200 dark:text-zinc-300',
+      bare
+        ? ''
+        : 'min-h-screen bg-gradient-to-b from-brand-50/50 via-white to-sky-50/30 dark:from-brand-950/20 dark:via-zinc-950 dark:to-brand-950/20',
+    ]}
   >
-    <Header nav={NAV} siteName={SITE.name} />
-    <main
-      class:list={[
-        'mx-auto w-full px-4 sm:px-6',
-        wide ? 'max-w-6xl' : 'max-w-4xl',
-        flush ? '' : 'pb-4',
-      ]}
-    >
-      <slot />
-    </main>
-    <Footer siteName={SITE.name} domain={SITE.domain} />
+    {
+      bare ? (
+        <main class="w-full">
+          <slot />
+        </main>
+      ) : (
+        <>
+          <Header nav={NAV} siteName={SITE.name} />
+          <main
+            class:list={['mx-auto w-full px-4 sm:px-6', wide ? 'max-w-6xl' : 'max-w-4xl', flush ? '' : 'pb-4']}
+          >
+            <slot />
+          </main>
+          <Footer siteName={SITE.name} domain={SITE.domain} />
+        </>
+      )
+    }
   </body>
 </html>

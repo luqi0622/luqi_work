@@ -1,4 +1,5 @@
-import { gateDef } from './gates';
+import { gateDef, portName, portGroups, symbolFor } from './gates';
+import { topoSort } from './topology';
 import { MAX_ZOOM, MIN_ZOOM, WORLD_H, WORLD_W, uid } from './types';
 import type { Circuit, Edge, GateKind, LogicNode } from './types';
 
@@ -7,9 +8,14 @@ const NODE_W = 84;
 const NODE_H = 56;
 
 /** 画成「门图形」而不是矩形的元件类型 */
-const SHAPE_NODES = new Set<GateKind>([
-  'AND', 'OR', 'NOT', 'NAND', 'NOR', 'XOR', 'XNOR', 'DFF', 'CUSTOM',
-]);
+/**
+ * 这些元件的端口要内缩一点，因为它们的图形比元素盒子小
+ * （IO 类是小圆角盒，SEG7 有额外内衬）
+ */
+const SHAPE_NODES = new Set<GateKind>(['INPUT', 'SWITCH', 'CONST', 'OUTPUT', 'PROBE']);
+
+/** 画成小圆角端子的元件（不需要逻辑门那么大的盒子） */
+const IO_NODES = new Set<GateKind>(['INPUT', 'SWITCH', 'CONST', 'OUTPUT', 'PROBE']);
 
 export interface NodeMetric {
   w: number;
@@ -145,12 +151,25 @@ export class LogicBench {
   // 渲染
   // ============================================================
 
-  /** 元件尺寸（输入端口多时纵向拉高） */
+  /**
+   * 元件尺寸
+   *
+   * 三类元件分别对待：
+   * - IO 类（输入/输出/常量/开关/探针）是「端子」，画成小圆角盒就够了
+   * - 端口多的复合元件（MUX8 有 11 个输入）要纵向拉高才排得开
+   * - 普通逻辑门用基线尺寸
+   */
   private metric(node: LogicNode): NodeMetric {
-    const def = gateDef(node.type);
     const ports = Math.max(node.inputs, node.outputs, 1);
+    if (IO_NODES.has(node.type)) {
+      // 端子：横向短一点，竖向按端口数
+      return { w: 64, h: Math.max(34, ports * 18 + 16), inputs: node.inputs, outputs: node.outputs };
+    }
+    // 端口多时纵向拉高：11 个输入需要 11*18+22 = 220px
     const h = Math.max(NODE_H, ports * 18 + 22);
-    return { w: NODE_W, h, inputs: node.inputs, outputs: node.outputs };
+    // 端口多时略微加宽，框内限定符才放得下（MUX / DEC）
+    const w = ports > 4 ? NODE_W + 18 : NODE_W;
+    return { w, h, inputs: node.inputs, outputs: node.outputs };
   }
 
   /**
@@ -225,26 +244,45 @@ export class LogicBench {
     el.dataset.id = node.id;
     el.classList.add(`lc-node-${node.type.toLowerCase()}`);
 
-    // 标题（拖动把手）
-    const head = document.createElement('div');
-    head.className = 'lc-node-head';
-    head.textContent = this.nodeTitle(node);
-    el.appendChild(head);
+    // 拖动把手（整块都是，保留一个透明层接收指针）
+    const grab = document.createElement('div');
+    grab.className = 'lc-node-grab';
+    el.appendChild(grab);
 
-    // 值徽标（playhead 显示当前 0/1）
+    // IEC 方框的框内限定符（& ≥1 = 1 XOR Σ MUX …）
+    const qual = document.createElement('div');
+    qual.className = 'lc-sym-qual';
+    el.appendChild(qual);
+
+    // 用户自定义名（显示在框下方，不挤占框内）
+    const cap = document.createElement('div');
+    cap.className = 'lc-sym-caption';
+    el.appendChild(cap);
+
+    // 值徽标（playhead / 波形显示当前 0/1）
     const badge = document.createElement('span');
     badge.className = 'lc-node-val';
     el.appendChild(badge);
 
-    // 输入端口
+    // 输入端口（带端口标签，如 D0 / S0）
     for (let p = 0; p < node.inputs; p += 1) {
       const port = document.createElement('div');
       port.className = 'lc-port lc-port-in';
       port.dataset.node = node.id;
       port.dataset.port = String(p);
       port.dataset.kind = 'in';
-      port.title = `输入 ${p + 1}`;
+      port.title = portName(node, p, 'in');
       el.appendChild(port);
+
+      const nm = portName(node, p, 'in');
+      if (nm) {
+        const lab = document.createElement('i');
+        lab.className = 'lc-port-label lc-port-label-in';
+        lab.dataset.node = node.id;
+        lab.dataset.port = String(p);
+        lab.textContent = nm;
+        el.appendChild(lab);
+      }
     }
 
     // 输出端口
@@ -254,120 +292,23 @@ export class LogicBench {
       port.dataset.node = node.id;
       port.dataset.port = String(p);
       port.dataset.kind = 'out';
-      port.title = node.type === 'DFF' ? (p === 0 ? 'Q' : '/Q') : `输出 ${p + 1}`;
+      port.title = portName(node, p, 'out');
       el.appendChild(port);
+
+      const onm = portName(node, p, 'out');
+      if (onm) {
+        const lab = document.createElement('i');
+        lab.className = 'lc-port-label lc-port-label-out';
+        lab.dataset.node = node.id;
+        lab.dataset.port = String(p);
+        lab.textContent = onm;
+        el.appendChild(lab);
+      }
     }
 
     // 节点拖动 / 选中统一在 onPointerDown 里处理（那里能拿到 closest('.lc-node')），
     // 这里只负责停止事件冒泡到端口逻辑之外
     return el;
-  }
-
-  private updateNodeEl(node: LogicNode, el: HTMLElement) {
-    const m = this.metric(node);
-    el.style.left = `${node.x}px`;
-    el.style.top = `${node.y}px`;
-    el.style.width = `${m.w}px`;
-    el.style.height = `${m.h}px`;
-
-    const head = el.querySelector('.lc-node-head') as HTMLElement | null;
-    if (head) {
-      head.textContent = this.nodeTitle(node);
-      // 门符号图形层：让形状本身就长得像门
-      el.dataset.glyph = this.glyphOf(node);
-    }
-
-    // 端口数量变化时重建
-    const ins = el.querySelectorAll('.lc-port-in').length;
-    const outs = el.querySelectorAll('.lc-port-out').length;
-    if (ins !== node.inputs || outs !== node.outputs) {
-      el.remove();
-      this.nodeEls.delete(node.id);
-      const fresh = this.createNodeEl(node);
-      this.nodeLayer.appendChild(fresh);
-      this.nodeEls.set(node.id, fresh);
-      this.updateNodeEl(node, fresh);
-      return;
-    }
-
-    // 端口定位
-    el.querySelectorAll<HTMLElement>('.lc-port-in').forEach((p) => {
-      const pos = this.inPort(node, Number(p.dataset.port));
-      p.style.left = `${pos.x - node.x}px`;
-      p.style.top = `${pos.y - node.y}px`;
-    });
-    el.querySelectorAll<HTMLElement>('.lc-port-out').forEach((p) => {
-      const pos = this.outPort(node, Number(p.dataset.port));
-      p.style.left = `${pos.x - node.x}px`;
-      p.style.top = `${pos.y - node.y}px`;
-    });
-
-    // 状态类
-    el.classList.toggle('is-selected', this.selection.kind === 'node' && this.selection.id === node.id);
-    el.classList.toggle('is-cycle', this.cycleNodes.has(node.id));
-
-    // 值徽标
-    const badge = el.querySelector('.lc-node-val') as HTMLElement;
-    if (badge) {
-      const v = this.liveValues?.get(node.id);
-      if (this.liveValues && v && v.length > 0) {
-        badge.textContent = v.map(Number).join('');
-        badge.className = `lc-node-val is-on${v[0] ? ' v1' : ' v0'}`;
-        badge.style.display = '';
-      } else {
-        badge.style.display = 'none';
-      }
-    }
-
-    // 常量节点高亮 0/1
-    el.classList.toggle('is-const-1', node.type === 'CONST' && node.constValue);
-    el.classList.toggle('is-const-0', node.type === 'CONST' && !node.constValue);
-    // 输入被 pin 时灰显
-    el.classList.toggle('is-pinned', node.type === 'INPUT' && !!node.pinned);
-  }
-
-  private nodeTitle(node: LogicNode): string {
-    const def = gateDef(node.type);
-    switch (node.type) {
-      case 'INPUT':
-        return node.name ?? '输入';
-      case 'OUTPUT':
-        return node.name ?? '输出';
-      case 'CONST':
-        return node.constValue ? '1' : '0';
-      case 'CUSTOM':
-        return node.name ?? '黑盒';
-      default:
-        return def.label;
-    }
-  }
-
-  /** 门形状的 ASCII 符号，用 CSS 画出来 */
-  private glyphOf(node: LogicKindSafe): string {
-    switch (node.type) {
-      case 'AND':
-      case 'NAND':
-        return 'and';
-      case 'OR':
-      case 'NOR':
-      case 'XOR':
-      case 'XNOR':
-        return 'or';
-      case 'NOT':
-        return 'not';
-      case 'DFF':
-        return 'dff';
-      case 'INPUT':
-        return 'input';
-      case 'OUTPUT':
-        return 'output';
-      case 'CONST':
-        return 'const';
-      case 'CUSTOM':
-        return 'custom';
-      default:
-        return 'box';
-    }
   }
 
   private renderWires() {
@@ -433,45 +374,12 @@ export class LogicBench {
     const srcVal = this.liveValues?.get(from.id)?.[edge.from.port];
     el.classList.toggle('is-hot', this.liveValues !== null && srcVal === true);
   }
-
   /** 重新计算环路与未连接端口标记 */
   refreshDiagnostics() {
-    // 环路
-    const inDeg = new Map<string, number>();
-    const adj = new Map<string, string[]>();
-    for (const n of this.circuit.nodes) {
-      inDeg.set(n.id, 0);
-      adj.set(n.id, []);
-    }
-    for (const e of this.circuit.edges) {
-      if (!inDeg.has(e.from.node) || !inDeg.has(e.to.node)) continue;
-      adj.get(e.from.node)!.push(e.to.node);
-      inDeg.set(e.to.node, (inDeg.get(e.to.node) ?? 0) + 1);
-    }
-    const q: string[] = [];
-    for (const [id, d] of inDeg) if (d === 0) q.push(id);
-    const seen = new Set<string>();
-    let head = 0;
-    while (head < q.length) {
-      const id = q[head++];
-      seen.add(id);
-      for (const nx of adj.get(id)!) {
-        const d = (inDeg.get(nx) ?? 0) - 1;
-        inDeg.set(nx, d);
-        if (d === 0) q.push(nx);
-      }
-    }
-    this.cycleNodes = new Set(
-      this.circuit.nodes.filter((n) => !seen.has(n.id) && (inDeg.get(n.id) ?? 0) > 0).map((n) => n.id)
-    );
-    // 环上及环的下游都算「无法求值」
-    if (this.cycleNodes.size > 0) {
-      for (const n of this.circuit.nodes) {
-        if (!seen.has(n.id)) this.cycleNodes.add(n.id);
-      }
-    }
+    const topo = topoSort(this.circuit);
+    this.cycleNodes = new Set(topo.cycleNodes);
 
-    // 未连接输入端口
+    // 未连接输入端口 → 灰色虚线提示
     this.unconnectedPorts.clear();
     const linked = new Set<string>();
     for (const e of this.circuit.edges) linked.add(`${e.to.node}:${e.to.port}`);
@@ -481,12 +389,122 @@ export class LogicBench {
       }
     }
 
-    // 端口虚线态
     this.nodeEls.forEach((el, id) => {
       el.querySelectorAll<HTMLElement>('.lc-port-in').forEach((p) => {
         p.classList.toggle('is-open', this.unconnectedPorts.has(`${id}:${p.dataset.port}`));
       });
     });
+  }
+
+  /**
+   * 元件下方的小字说明（用户自定义名）
+   * 框内已经有 IEC 限定符了，所以名字放框外，避免和 & ≥1 这类符号挤在一起
+   */
+  private nodeCaption(node: LogicNode): string {
+    if (node.type === 'INPUT' || node.type === 'OUTPUT') return node.name ?? '';
+    if (node.type === 'CUSTOM') return node.name ?? '';
+    if (node.type === 'PROBE') return node.name ?? '';
+    return '';
+  }
+
+  private updateNodeEl(node: LogicNode, el: HTMLElement) {
+    const m = this.metric(node);
+    el.style.left = `${node.x}px`;
+    el.style.top = `${node.y}px`;
+    el.style.width = `${m.w}px`;
+    el.style.height = `${m.h}px`;
+
+    // 符号规格：驱动 CSS 画框内限定符与形状
+    const spec = symbolFor(node);
+    el.dataset.shape = spec.shape;
+    el.dataset.bubble = spec.bubble ?? '';
+
+    const qual = el.querySelector('.lc-sym-qual') as HTMLElement | null;
+    if (qual) qual.textContent = spec.qualifier;
+
+    const cap = el.querySelector('.lc-sym-caption') as HTMLElement | null;
+    if (cap) {
+      const name = this.nodeCaption(node);
+      cap.textContent = name;
+      cap.style.display = name ? '' : 'none';
+    }
+
+    // 开关 / 常量的框内直接显示当前值
+    if (node.type === 'SWITCH' || node.type === 'CONST') {
+      const v = node.type === 'SWITCH' ? (node.switchValue ?? false) : (node.constValue ?? false);
+      if (qual) qual.textContent = v ? '1' : '0';
+      el.classList.toggle('is-on', v);
+    }
+
+    // 端口数量变化时重建
+    const ins = el.querySelectorAll('.lc-port-in').length;
+    const outs = el.querySelectorAll('.lc-port-out').length;
+    if (ins !== node.inputs || outs !== node.outputs) {
+      el.remove();
+      this.nodeEls.delete(node.id);
+      const fresh = this.createNodeEl(node);
+      this.nodeLayer.appendChild(fresh);
+      this.nodeEls.set(node.id, fresh);
+      this.updateNodeEl(node, fresh);
+      return;
+    }
+
+    // 端口定位 + 端口标签定位
+    el.querySelectorAll<HTMLElement>('.lc-port-in').forEach((p) => {
+      const idx = Number(p.dataset.port);
+      const pos = this.inPort(node, idx);
+      p.style.left = `${pos.x - node.x}px`;
+      p.style.top = `${pos.y - node.y}px`;
+
+      const lab = el.querySelector<HTMLElement>(
+        `.lc-port-label-in[data-port="${idx}"]`
+      );
+      if (lab) {
+        // 锚在端口圆心，由 CSS 的 transform 决定往哪边让开
+        lab.style.left = `${pos.x - node.x}px`;
+        lab.style.top = `${pos.y - node.y}px`;
+        // 选择位用不同颜色区分（末 selBits 个）
+        const { data, sel } = portGroups(node);
+        lab.classList.toggle('is-sel', sel > 0 && idx >= data);
+      }
+    });
+    el.querySelectorAll<HTMLElement>('.lc-port-out').forEach((p) => {
+      const idx = Number(p.dataset.port);
+      const pos = this.outPort(node, idx);
+      p.style.left = `${pos.x - node.x}px`;
+      p.style.top = `${pos.y - node.y}px`;
+
+      const lab = el.querySelector<HTMLElement>(
+        `.lc-port-label-out[data-port="${idx}"]`
+      );
+      if (lab) {
+        lab.style.left = `${pos.x - node.x}px`;
+        lab.style.top = `${pos.y - node.y}px`;
+      }
+    });
+
+    // 状态类
+    el.classList.toggle('is-selected', this.selection.kind === 'node' && this.selection.id === node.id);
+    el.classList.toggle('is-cycle', this.cycleNodes.has(node.id));
+
+    // 值徽标
+    const badge = el.querySelector('.lc-node-val') as HTMLElement;
+    if (badge) {
+      const v = this.liveValues?.get(node.id);
+      if (this.liveValues && v && v.length > 0) {
+        badge.textContent = v.map(Number).join('');
+        badge.className = `lc-node-val is-on${v[0] ? ' v1' : ' v0'}`;
+        badge.style.display = '';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+
+    // 常量节点高亮 0/1
+    el.classList.toggle('is-const-1', node.type === 'CONST' && node.constValue);
+    el.classList.toggle('is-const-0', node.type === 'CONST' && !node.constValue);
+    // 输入被 pin 时灰显
+    el.classList.toggle('is-pinned', node.type === 'INPUT' && !!node.pinned);
   }
 
   // ============================================================
@@ -715,6 +733,21 @@ export class LogicBench {
     this.zoom = 1;
     this.applyTransform();
     this.emit('view');
+  }
+
+  /** 取当前平移量（把元件放到视口中心时需要） */
+  getPan(): { x: number; y: number } {
+    return { x: this.panX, y: this.panY };
+  }
+
+  /** 直接放置一个节点（点击元件库时用，比拖拽更适合触屏） */
+  placeNode(node: LogicNode, x: number, y: number) {
+    node.x = x;
+    node.y = y;
+    this.pushSnapshot();
+    this.circuit.nodes.push(node);
+    this.commit('add');
+    this.select('node', node.id);
   }
 
   getZoom() {
