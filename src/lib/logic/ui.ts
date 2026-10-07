@@ -42,8 +42,13 @@ import type { TruthTable } from './truthtable';
 import { collectWaveSignals, renderWavePanel } from './waveform';
 import type { Circuit, CustomBox, GateKind, LogicNode } from './types';
 
+/**
+ * 取元素
+ * 找不到时返回 null（而不是假装成功），调用方多数做了?. 判断，
+ * 关键路径（#canvas）在 boot() 里单独检查并提示。
+ */
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) =>
-  document.querySelector<T>(sel) as T;
+  document.querySelector<T>(sel);
 
 // ============================================================
 // 状态
@@ -69,10 +74,25 @@ let inspectorPinned = false;
 // ============================================================
 
 function boot() {
+  // 生产构建里这个模块脚本可能在 DOM 就绪前执行（dev 时机不同，本地不暴露这个竞态）。
+  // 挂载点缺失就等 DOMContentLoaded 再跑，否则 querySelector 返回 null 会静默失败。
+  const host = document.querySelector<HTMLElement>('#canvas');
+  if (!host) {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => boot(), { once: true });
+    } else {
+      // DOM 已就绪却还是找不到挂载点，说明页面结构变了，给出可见提示而不是静默失败
+      console.error('[logic] 找不到画布挂载点 #canvas，页面结构可能已变更');
+      const err = document.querySelector('#status-text');
+      if (err) err.textContent = '页面初始化失败：缺少画布挂载点';
+    }
+    return;
+  }
+
   const draft = loadDraft();
   const circuit = draft ?? PRESETS[0].make();
 
-  bench = new LogicBench($('#canvas'), circuit);
+  bench = new LogicBench(host, circuit);
   sim = new Simulator(bench.circuit, customsMap());
 
   bench.customLookup = (id) => {
