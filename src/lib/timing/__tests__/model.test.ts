@@ -44,7 +44,7 @@ import {
   toHex,
   type History,
 } from '../model';
-import { GEO, axisTicks, exportSVG, renderAll } from '../render';
+import { GEO, axisTicks, exportSVG, renderAll, rowTopOf } from '../render';
 import { PRESETS, emptyDoc, loadPreset, presetGroups } from '../preset';
 
 let pass = 0;
@@ -422,6 +422,124 @@ console.log('—— 渲染 path ——');
   ok(GEO.nameW > 40, '信号名列宽度足够');
   ok(GEO.rowH > 20 && GEO.rowH < 80, '行高在合理区间');
   ok(GEO.ampRatio > 0.3 && GEO.ampRatio < 1, '振幅占比在合理区间');
+
+  // ---- 回归：yBase 用错导致名字与波形错位 ----
+  /**
+   * 症状：名字列在左边，波形在右边，但两者不在同一水平线上。
+   * 越往下偏得越多—— 第 0 行差 padTop(8px)，往下每行多差一个 rowH(38px)。
+   *
+   * 根因：屏幕渲染时每行是独立 SVG，行容器已被 CSS 绝对定位到 rowTopOf(i)，
+   * SVG 内部若再叠一次 rowTopOf(i) 就偏移了两次。导出时整图是一个 SVG，
+   * 反而需要全局坐标 —— 所以两条路径对 yBase 的要求正好相反。
+   */
+  {
+    const many = normalize({
+      title: '对齐',
+      lengthTicks: 100,
+      majorEvery: 10,
+      signals: [
+        { kind: 'clock', name: 'CK', period: 10 },
+        { kind: 'digital', name: 'A', edges: [20, 40] },
+        { kind: 'bus', name: 'B', width: 8, segments: [{ t: 0, v: 1 }, { t: 30, v: 2 }] },
+        { kind: 'analog', name: 'C', points: [{ t: 0, v: 0.2 }, { t: 50, v: 0.9 }] },
+        { kind: 'digital', name: 'D', edges: [10] },
+        { kind: 'clock', name: 'E', period: 20 },
+      ],
+    });
+
+    /**
+     * 只提取 y 坐标。
+     * 别用 /[MLHV]\s*(-?[\d.]+)/ 一把抓—— H 后面是 x，V 后面才是 y，
+     * M/L 后面是 "x y" 两个数。抓错会连 x 一起收进来，
+     * 而 x 里有个 1e7 的「画到画布右缘」哨兵值，会把 max 撑爆，
+     * 断言就变成永远失败（第一版就是这么错的）。
+     */
+    const ysOf = (d: string): number[] => {
+      const out: number[] = [];
+      const re = /([MLHV])\s*(-?[\d.]+)(?:\s+(-?[\d.]+))?/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(d))) {
+        const [, cmd, a, b] = m;
+        if (cmd === 'V') out.push(Number(a));
+        else if (cmd === 'M' || cmd === 'L') out.push(Number(b));
+        // H 只有 x，没有 y
+      }
+      return out;
+    };
+
+    // 屏幕路径：yBase = 0，路径的 y 必须落在 [0, rowH] 内
+    const screen = renderAll(many, { pxPerTick: 4, nameW: 0 }, () => 0);
+    screen.forEach((s, i) => {
+      const ys = ysOf(s.d);
+      ok(ys.length > 0, `第 ${i} 条能解析出 y 坐标`);
+      ok(
+        ys.every((y) => y >= -0.01 && y <= GEO.rowH + 0.01),
+        `第 ${i} 条 y 落在行内 [0, ${GEO.rowH}]`,
+        { i, min: Math.min(...ys), max: Math.max(...ys) },
+      );
+      if (s.d2) {
+        const ys2 = ysOf(s.d2);
+        ok(
+          ys2.every((y) => y >= -0.01 && y <= GEO.rowH + 0.01),
+          `第 ${i} 条总线第二条线 y 在行内`,
+          { min: Math.min(...ys2), max: Math.max(...ys2) },
+        );
+      }
+    });
+
+    // 关键不变量：**屏幕 y 必须落在行容器内 [0, rowH]**，
+    // **导出 y 必须落在全局区间 [rowTopOf(i), rowTopOf(i)+rowH]**。
+    // 错位 bug 正是这个区间被破坏 —— 各行被额外叠加了 rowTopOf(i)。
+    //
+    // 注意不能拿「各行 min y 相同」当不变量：模拟信号的 min y 取决于自身幅度
+    // （v=0.9 的点比 v=0.1 的点靠上），跟对齐无关。要用「是否落在本行区间」。
+    const exported = renderAll(many, { pxPerTick: 4, nameW: 0 });
+    screen.forEach((s, i) => {
+      const ys = ysOf(s.d);
+      ok(
+        ys.every((y) => y >= -0.01 && y <= GEO.rowH + 0.01),
+        `第 ${i} 条屏幕 y 落在行容器内 [0, ${GEO.rowH}]`,
+        { min: Math.min(...ys), max: Math.max(...ys) },
+      );
+    });
+    exported.forEach((s, i) => {
+      const ys = ysOf(s.d);
+      const lo = rowTopOf(i);
+      ok(
+        ys.every((y) => y >= lo - 0.01 && y <= lo + GEO.rowH + 0.01),
+        `第 ${i} 条导出 y 落在全局区间 [${lo}, ${lo + GEO.rowH}]`,
+        { min: Math.min(...ys), max: Math.max(...ys) },
+      );
+    });
+
+    // 屏幕与导出的 y 差必须恰好等于 rowTopOf(i)—— 这就是两条路径的换算关系
+    screen.forEach((s, i) => {
+      const a = ysOf(s.d);
+      const b = ysOf(exported[i].d);
+      ok(
+        a.length === b.length && a.every((y, k) => Math.abs(b[k] - y - rowTopOf(i)) < 0.01),
+        `第 ${i} 条：导出 y = 屏幕 y + rowTopOf(${i}) = ${rowTopOf(i)}`,
+      );
+    });
+
+    // 行偏移必须严格递增 rowH —— 用数字/时钟/总线（幅度固定，min y 可比）来验
+    const fixed = many.signals.map((s, i) => ({ s, i })).filter(({ s }) => s.kind !== 'analog');
+    const sMin = fixed.map(({ s, i }) => Math.min(...ysOf(renderAll(many, { pxPerTick: 4, nameW: 0 }, () => 0)[i].d)));
+    const eMin = fixed.map(({ s, i }) => Math.min(...ysOf(exported[i].d)));
+    ok(new Set(sMin.map((v) => v.toFixed(3))).size === 1, '屏幕：定幅信号各行起点 y 相同', sMin);
+    const gaps = eMin.slice(1).map((v, k) => +(v - eMin[k]).toFixed(6));
+    // 相邻两行间隔 = rowH ×行号差（因为 fixed 跳过了 analog，用行号算）
+    const expectGaps = fixed.slice(1).map(({ i }, k) => GEO.rowH * (i - fixed[k].i));
+    ok(
+      gaps.every((g, k) => Math.abs(g - expectGaps[k]) < 0.01),
+      '导出：定幅信号各行起点间距 = rowH × 行号差',
+      { got: gaps, want: expectGaps },
+    );
+
+    // 不传 yBase（老调用方式）必须等价于全局坐标，即导出行为不被这次改动破坏
+    const legacy = renderAll(many, { pxPerTick: 4, nameW: 0 });
+    eq(legacy.map((s) => s.d), exported.map((s) => s.d), '不传 yBase 仍走全局坐标（向后兼容）');
+  }
 
   // 网格刻度
   const ticks = axisTicks(doc, { pxPerTick: 4 });

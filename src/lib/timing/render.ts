@@ -79,15 +79,25 @@ export function canvasWidth(doc: TimingDoc, opts: RenderOpts): number {
 // ============================================================================
 
 /** 行内的电平 y 坐标：hi=0（靠上），lo=1（靠下） */
-function levelY(rowTop: number, level: 0 | 1): number {
-  const amp = GEO.rowH * GEO.ampRatio;
-  const off = (GEO.rowH - amp) / 2;
-  return rowTop + off + (level === 1 ? amp : 0);
-}
-
-/** 行顶（不含时间轴） */
+/** 行顶（相对整张图，用于导出与覆盖层定位） */
 export function rowTopOf(row: number): number {
   return GEO.padTop + row * GEO.rowH;
+}
+
+/**
+ * 行内电平 y 坐标
+ *
+ * @param yBase 行的 y 基准。
+ *   - **屏幕渲染传0**：每行是独立 SVG，行容器已被 CSS 绝对定位到 rowTopOf(row)，
+ *     SVG 内部必须从 0 开始算。不传 0 会重复叠加行偏移，症状是
+ *     「越往下偏得越多」——实测第 0 行差 padTop(8px)，往下每行多差一个 rowH(38px)，
+ *     第 6 行累计偏 236px，肉眼看就是名字和波形对不上。
+ *   - **导出传 rowTopOf(row)**：整张图是一个 SVG，需要全局坐标。
+ */
+function levelY(yBase: number, level: 0 | 1): number {
+  const amp = GEO.rowH * GEO.ampRatio;
+  const off = (GEO.rowH - amp) / 2;
+  return yBase + off + (level === 1 ? amp : 0);
 }
 
 /**
@@ -96,10 +106,9 @@ export function rowTopOf(row: number): number {
  * 电平不变时沿水平走，变化时在同一个 x 上垂直跳 —— 这是数字波形的标准画法。
  * 一次 H 一次 V 交替，绝不斜线，斜线在时序图里是错的。
  */
-function digitalPath(seg: DigitalSeg, row: number, nameW: number, px: number): { d: string; edgeX: number[] } {
-  const top = rowTopOf(row);
-  const hi = levelY(top, 0);
-  const lo = levelY(top, 1);
+function digitalPath(seg: DigitalSeg, yBase: number, nameW: number, px: number): { d: string; edgeX: number[] } {
+  const hi = levelY(yBase, 0);
+  const lo = levelY(yBase, 1);
   let level = seg.initial;
   let d = `M ${nameW} ${level === 1 ? lo : hi}`;
   const edgeX: number[] = [];
@@ -121,7 +130,7 @@ function digitalPath(seg: DigitalSeg, row: number, nameW: number, px: number): {
  * 用clockEdges 展开成边沿再画，和数字信号走同一条渲染路径 ——
  * 好处是时钟也自动获得可拖动手柄，同时保持视觉一致。
  */
-function clockPath(seg: ClockSeg, doc: TimingDoc, row: number, nameW: number, px: number): { d: string; edgeX: number[] } {
+function clockPath(seg: ClockSeg, doc: TimingDoc, yBase: number, nameW: number, px: number): { d: string; edgeX: number[] } {
   const asDigital: DigitalSeg = {
     kind: 'digital',
     id: seg.id,
@@ -130,7 +139,7 @@ function clockPath(seg: ClockSeg, doc: TimingDoc, row: number, nameW: number, px
     initial: seg.initial,
     edges: clockEdges(seg, doc.lengthTicks),
   };
-  return digitalPath(asDigital, row, nameW, px);
+  return digitalPath(asDigital, yBase, nameW, px);
 }
 
 /**
@@ -142,12 +151,11 @@ function clockPath(seg: ClockSeg, doc: TimingDoc, row: number, nameW: number, px
  * 关键细节：X 的半宽要受**相邻段长度**约束（crossHalfWidth）。
  * 段很短时如果还用固定半宽，X 会盖住左右邻居的电平，总线就读错了。
  */
-function busPath(seg: BusSeg, row: number, nameW: number, px: number): SignalShape {
-  const top = rowTopOf(row);
+function busPath(seg: BusSeg, yBase: number, nameW: number, px: number): SignalShape {
   const amp = GEO.rowH * GEO.ampRatio;
   const off = (GEO.rowH - amp) / 2;
-  const yTop = top + off;
-  const yBot = top + off + amp;
+  const yTop = yBase + off;
+  const yBot = yBase + off + amp;
   const x = (t: number) => nameW + t * px;
   const endX = nameW + 1e7;
 
@@ -175,7 +183,7 @@ function busPath(seg: BusSeg, row: number, nameW: number, px: number): SignalSha
     if (segEndX - curX > 28) {
       labels.push({
         x: midX,
-        y: top + GEO.rowH / 2 + 4,
+        y: yBase + GEO.rowH / 2 + 4,
         text: toHex(s.v, seg.width),
       });
     }
@@ -185,11 +193,10 @@ function busPath(seg: BusSeg, row: number, nameW: number, px: number): SignalSha
 }
 
 /** 模拟信号：折线（线性插值），每个关键点一个小圆点 */
-function analogPath(seg: AnalogSeg, row: number, nameW: number, px: number): SignalShape {
-  const top = rowTopOf(row);
+function analogPath(seg: AnalogSeg, yBase: number, nameW: number, px: number): SignalShape {
   const amp = GEO.rowH * GEO.ampRatio;
   const off = (GEO.rowH - amp) / 2;
-  const y = (v: number) => top + off + amp * (1 - Math.min(1, Math.max(0, v)));
+  const y = (v: number) => yBase + off + amp * (1 - Math.min(1, Math.max(0, v)));
   const x = (t: number) => nameW + t * px;
 
   let d = '';
@@ -207,34 +214,43 @@ function analogPath(seg: AnalogSeg, row: number, nameW: number, px: number): Sig
   };
 }
 
-/** 分发到具体类型的渲染 */
+/**
+ * 分发到具体类型的渲染
+ *
+ * @param yBase 行的 y 基准。**屏幕传 0**（每行独立 SVG，容器已定位好），
+ *              **导出传 rowTopOf(row)**（整图一个 SVG，要全局坐标）。
+ *              传错会导致名字列与波形错位，且越往下偏得越多。
+ */
 export function renderSignal(
   doc: TimingDoc,
   seg: Signal,
   row: number,
   opts: RenderOpts,
+  yBase?: number,
 ): SignalShape {
   const nameW = opts.nameW ?? GEO.nameW;
   const px = opts.pxPerTick;
+  // 不传 yBase 时默认用全局坐标（导出路径的老行为）
+  const y = yBase ?? rowTopOf(row);
   switch (seg.kind) {
     case 'clock': {
-      const r = clockPath(seg, doc, row, nameW, px);
+      const r = clockPath(seg, doc, y, nameW, px);
       return { id: seg.id, d: r.d, labels: [], edgeX: r.edgeX, color: seg.color };
     }
     case 'bus':
-      return busPath(seg, row, nameW, px);
+      return busPath(seg, y, nameW, px);
     case 'analog':
-      return analogPath(seg, row, nameW, px);
+      return analogPath(seg, y, nameW, px);
     default: {
-      const r = digitalPath(seg, row, nameW, px);
+      const r = digitalPath(seg, y, nameW, px);
       return { id: seg.id, d: r.d, labels: [], edgeX: r.edgeX, color: seg.color };
     }
   }
 }
 
-/** 一次渲染全部信号 */
-export function renderAll(doc: TimingDoc, opts: RenderOpts): SignalShape[] {
-  return doc.signals.map((seg, i) => renderSignal(doc, seg, i, opts));
+/** 一次渲染全部信号（yBase 逐行传入，屏幕用 0） */
+export function renderAll(doc: TimingDoc, opts: RenderOpts, yBase?: (row: number) => number): SignalShape[] {
+  return doc.signals.map((seg, i) => renderSignal(doc, seg, i, opts, yBase ? yBase(i) : undefined));
 }
 
 // ============================================================================

@@ -280,7 +280,9 @@ export class TimingEditor {
     // --- 每一行：独立 SVG，互不干扰，选中/悬停高亮只影响一行 ---
     this.els.rows.innerHTML = this.doc.signals
       .map((sig, i) => {
-        const shape = renderAll(this.doc, { ...opts })[i];
+        // yBase 传0：每行是独立 SVG，行容器已由 CSS 定位到 rowTopOf(i)，
+        // 内部再叠一次行偏移就会「越往下偏得越多」（实测第 6 行偏 236px）
+        const shape = renderAll(this.doc, { ...opts }, () => 0)[i];
         const sel = sig.id === this.selId ? ' is-sel' : '';
         const handles = shape.edgeX
           .map(
@@ -766,7 +768,7 @@ export class TimingEditor {
 
   private clockEdgeList(sig: Signal): number[] {
     // 时钟边沿由 render 层算过一遍，这里重新展开成本很低（几十个元素）
-    const shape = renderAll(this.doc, { pxPerTick: this.px, nameW: 0 }).find((s) => s.id === sig.id);
+    const shape = renderAll(this.doc, { pxPerTick: this.px, nameW: 0 }, () => 0).find((s) => s.id === sig.id);
     // edgeX 是像素坐标，转回 tick
     return shape ? shape.edgeX.map((x) => Math.round(x / this.px)) : [];
   }
