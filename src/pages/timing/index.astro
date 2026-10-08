@@ -1,0 +1,757 @@
+---
+/**
+ * 时序波形图编辑器
+ *
+ * 纯前端工具：拖边沿 / 改周期 / 调总线值 → 导出 SVG 直接拖进 PowerPoint
+ *
+ * 架构：数据模型与渲染逻辑在 src/lib/timing/（纯函数，可单测），
+ * 页面装配在 ui.ts 的 TimingEditor 类。
+ */
+import BaseLayout from '@/layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="时序波形图"
+  description="画集成电路时序图的在线小工具：数字、时钟、总线、模拟四种波形，拖边沿改时刻，导出 SVG 直接插进 PPT。内置 DDR3/DDR4 读写、DRAM 刷新、Bank 冲突等时序预设。"
+  wide
+  flush
+  bare
+>
+  <div id="timing-root" class="tm-host"></div>
+
+  <noscript>
+    <p style="padding:2rem;text-align:center">这个工具需要 JavaScript 才能运行。</p>
+  </noscript>
+</BaseLayout>
+
+<script>
+  import { TimingEditor } from '@/lib/timing/ui';
+  const root = document.getElementById('timing-root');
+  if (root) new TimingEditor(root);
+</script>
+
+<style is:global>
+  /*
+   * 布局纪律（都实际踩过）：
+   * 1. 高度链每一环都要显式高度，否则 getBoundingClientRect 全读到 0
+   * 2. grid 直接子元素必须都带 min-width:0，否则宽内容把整栏撑爆
+   * 3. 动态创建的节点用 <style is:global>，Astro scoped 打不中它们
+   */
+
+  .tm-host {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--tm-bg);
+    color: var(--tm-ink);
+  }
+
+  .tm-root {
+    --tm-bg: #fafafa;
+    --tm-panel: #ffffff;
+    --tm-sunken: #f4f4f5;
+    --tm-ink: #18181b;
+    --tm-ink-2: #52525b;
+    --tm-ink-3: #a1a1aa;
+    --tm-line: #e4e4e7;
+    --tm-line-2: #d4d4d8;
+    --tm-accent: #185fa5;
+    --tm-accent-soft: #e6f1fb;
+    --tm-danger: #a32d2d;
+    --tm-grid: #a1a1aa;
+
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-size: 13px;
+    background: var(--tm-bg);
+    color: var(--tm-ink);
+  }
+
+  .dark .tm-root {
+    --tm-bg: #09090b;
+    --tm-panel: #18181b;
+    --tm-sunken: #27272a;
+    --tm-ink: #e4e4e7;
+    --tm-ink-2: #a1a1aa;
+    --tm-ink-3: #71717a;
+    --tm-line: #27272a;
+    --tm-line-2: #3f3f46;
+    --tm-accent: #7f77dd;
+    --tm-accent-soft: #26215c;
+    --tm-danger: #f09595;
+    --tm-grid: #52525b;
+  }
+
+  /* ============ 顶栏 ============ */
+
+  .tm-topbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--tm-panel);
+    border-bottom: 1px solid var(--tm-line);
+  }
+
+  .tm-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--tm-ink-2);
+    text-decoration: none;
+    padding: 4px 8px;
+    border-radius: 6px;
+  }
+  .tm-back:hover {
+    background: var(--tm-sunken);
+    color: var(--tm-ink);
+  }
+  .tm-i {
+    width: 15px;
+    height: 15px;
+    flex: none;
+  }
+
+  .tm-title {
+    min-width: 0;
+    width: 240px;
+    padding: 5px 9px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--tm-ink);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    outline: none;
+  }
+  .tm-title:hover {
+    border-color: var(--tm-line-2);
+  }
+  .tm-title:focus {
+    border-color: var(--tm-accent);
+    background: var(--tm-bg);
+  }
+
+  .tm-spacer {
+    flex: 1;
+  }
+
+  .tm-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 9px;
+    font-size: 12px;
+    color: var(--tm-ink-2);
+    background: var(--tm-panel);
+    border: 1px solid var(--tm-line-2);
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .tm-btn:hover:not(:disabled) {
+    background: var(--tm-sunken);
+    color: var(--tm-ink);
+  }
+  .tm-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .tm-btn-accent {
+    color: var(--tm-accent);
+    border-color: var(--tm-accent);
+  }
+  .tm-btn-wide {
+    width: 100%;
+    justify-content: center;
+    margin-top: 6px;
+  }
+
+  .tm-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--tm-line);
+  }
+
+  .tm-select,
+  .tm-input {
+    padding: 4px 7px;
+    font-size: 12px;
+    color: var(--tm-ink);
+    background: var(--tm-panel);
+    border: 1px solid var(--tm-line-2);
+    border-radius: 6px;
+    outline: none;
+    min-width: 0;
+  }
+  .tm-select:focus,
+  .tm-input:focus {
+    border-color: var(--tm-accent);
+  }
+  .tm-input-w {
+    width: 62px;
+  }
+  .tm-color {
+    width: 100%;
+    height: 26px;
+    padding: 2px;
+    border: 1px solid var(--tm-line-2);
+    border-radius: 6px;
+    background: var(--tm-panel);
+    cursor: pointer;
+  }
+
+  /* ============ 三栏主区 ============ */
+
+  /* 两栏：画布（含名字列）+ 检查器。信号名只在画布内的名字列出现一次 */
+  .tm-main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 272px;
+    min-height: 0;
+  }
+  /* 防御：任何一栏漏了 min-width:0，里面的宽内容会撑爆整个布局 */
+  .tm-main > * {
+    min-width: 0;
+  }
+
+  /* ---- 左：信号列表 ---- */
+
+  .tm-left {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--tm-panel);
+    border-right: 1px solid var(--tm-line);
+  }
+
+  .tm-left-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--tm-ink-3);
+    border-bottom: 1px solid var(--tm-line);
+  }
+
+  .tm-signals {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px;
+  }
+
+  .tm-sig {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--tm-ink);
+  }
+  .tm-sig:hover {
+    background: var(--tm-sunken);
+  }
+  .tm-sig.is-sel {
+    background: var(--tm-accent-soft);
+    color: var(--tm-accent);
+  }
+
+  .tm-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex: none;
+  }
+  .tm-sname {
+    flex: 1;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tm-kind {
+    flex: none;
+    font-size: 10px;
+    color: var(--tm-ink-3);
+    padding: 1px 4px;
+    border: 1px solid var(--tm-line-2);
+    border-radius: 4px;
+  }
+
+  .tm-sact {
+    display: none;
+    gap: 1px;
+    flex: none;
+  }
+  .tm-sig:hover .tm-sact,
+  .tm-sig.is-sel .tm-sact {
+    display: flex;
+  }
+  .tm-sact button {
+    width: 18px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+    line-height: 1;
+    color: var(--tm-ink-2);
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .tm-sact button:hover:not(:disabled) {
+    background: var(--tm-line);
+    color: var(--tm-ink);
+  }
+  .tm-sact button:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+
+  .tm-adds {
+    display: flex;
+    gap: 4px;
+    flex: none;
+  }
+  .tm-count {
+    font-size: 11px;
+    color: var(--tm-ink-3);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: nowrap;
+  }
+  .tm-add {
+    padding: 4px 8px;
+    font-size: 11px;
+    color: var(--tm-ink-2);
+    background: var(--tm-panel);
+    border: 1px dashed var(--tm-line-2);
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .tm-add:hover {
+    border-color: var(--tm-accent);
+    border-style: solid;
+    color: var(--tm-accent);
+    background: var(--tm-accent-soft);
+  }
+
+  /* ---- 中：画布 ---- */
+
+  .tm-center {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .tm-toolbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 12px;
+    background: var(--tm-panel);
+    border-bottom: 1px solid var(--tm-line);
+  }
+  .tm-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--tm-ink-3);
+  }
+  .tm-field-wide {
+    min-width: 150px;
+  }
+  .tm-range {
+    flex: 1;
+    min-width: 80px;
+    accent-color: var(--tm-accent);
+  }
+  .tm-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--tm-ink-2);
+    cursor: pointer;
+  }
+  .tm-select-sm {
+    padding: 2px 5px;
+    font-size: 11px;
+  }
+
+  .tm-canvas {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+    background: var(--tm-panel);
+    overflow: hidden;
+  }
+
+  /* 高度链：canvas → scroll → inner，每一环都要有高度 */
+  .tm-scroll {
+    flex: 1;
+    min-width: 0;
+    overflow: auto;
+  }
+  .tm-inner {
+    position: relative;
+    min-height: 100%;
+  }
+
+  .tm-axis {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    height: 26px;
+    background: var(--tm-sunken);
+    border-bottom: 1px solid var(--tm-line-2);
+  }
+  .tm-tick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 1px solid var(--tm-line);
+  }
+  .tm-tick.is-major {
+    border-left-color: var(--tm-line-2);
+  }
+  .tm-tick span {
+    position: absolute;
+    left: 3px;
+    top: 5px;
+    font-size: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--tm-ink-3);
+    white-space: nowrap;
+  }
+
+  .tm-rows {
+    position: relative;
+  }
+
+  .tm-row {
+    position: absolute;
+    left: 0;
+    right: 0;
+  }
+  .tm-row.is-sel {
+    background: color-mix(in srgb, var(--tm-accent-soft) 45%, transparent);
+  }
+  .tm-wave {
+    display: block;
+    overflow: visible;
+  }
+  .tm-vlabel {
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  /* 边沿手柄：整列加宽命中区，视觉上是一条细线 */
+  .tm-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 9px;
+    margin-left: -4.5px;
+    cursor: ew-resize;
+    z-index: 2;
+  }
+  .tm-handle::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 4px;
+    bottom: 4px;
+    width: 1px;
+    background: transparent;
+    border-radius: 1px;
+  }
+  .tm-row:hover .tm-handle::after,
+  .tm-handle.is-sel::after {
+    background: color-mix(in srgb, var(--tm-danger) 55%, transparent);
+  }
+  .tm-handle.is-sel::after {
+    width: 2px;
+    background: var(--tm-danger);
+  }
+
+  .tm-overlay {
+    position: absolute;
+    left: 0;
+    z-index: 1;
+    pointer-events: none;
+    color: var(--tm-grid);
+  }
+  .tm-overlay .tm-marker,
+  .tm-overlay .tm-span {
+    pointer-events: auto;
+    cursor: ew-resize;
+  }
+
+  .tm-names {
+    position: relative;
+    flex: none;
+    z-index: 2;
+    background: var(--tm-panel);
+    border-right: 1px solid var(--tm-line-2);
+    overflow: hidden;
+  }
+  .tm-name {
+    position: absolute;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px 0 8px;
+    border-bottom: 1px solid var(--tm-line);
+    cursor: pointer;
+  }
+  .tm-name:hover {
+    background: var(--tm-sunken);
+  }
+  .tm-name.is-sel {
+    background: var(--tm-accent-soft);
+    color: var(--tm-accent);
+  }
+  .tm-ndot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex: none;
+  }
+  /* 名字列同时是信号管理器：悬停出现上下移与删除 */
+  .tm-nact {
+    display: none;
+    gap: 1px;
+    flex: none;
+  }
+  .tm-name:hover .tm-nact,
+  .tm-name.is-sel .tm-nact {
+    display: flex;
+  }
+  .tm-nact button {
+    width: 18px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+    line-height: 1;
+    color: var(--tm-ink-2);
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .tm-nact button:hover:not(:disabled) {
+    background: var(--tm-line);
+    color: var(--tm-ink);
+  }
+  .tm-nact button:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+  .tm-ntext {
+    flex: 1;
+    min-width: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tm-name .tm-kind {
+    border-color: var(--tm-line-2);
+  }
+  .tm-name.is-sel .tm-kind {
+    border-color: currentColor;
+  }
+
+  .tm-empty {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: 13px;
+    color: var(--tm-ink-3);
+    pointer-events: none;
+  }
+
+  .tm-status {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    font-size: 11px;
+    color: var(--tm-ink-3);
+    background: var(--tm-panel);
+    border-top: 1px solid var(--tm-line);
+  }
+  .tm-saved {
+    color: var(--tm-ink-3);
+  }
+
+  /* ---- 右：检查器 ---- */
+
+  .tm-right {
+    overflow-y: auto;
+    min-height: 0;
+    padding: 10px;
+    background: var(--tm-panel);
+    border-left: 1px solid var(--tm-line);
+  }
+
+  .tm-insp-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--tm-ink-3);
+    margin-bottom: 8px;
+  }
+
+  .tm-fld {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .tm-fld > span {
+    font-size: 11px;
+    color: var(--tm-ink-2);
+    flex: none;
+  }
+  .tm-fld > .tm-input,
+  .tm-fld > .tm-select {
+    flex: 1;
+    max-width: 150px;
+  }
+
+  .tm-insp-sub {
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--tm-ink-3);
+    margin: 12px 0 5px;
+    padding-top: 8px;
+    border-top: 1px solid var(--tm-line);
+  }
+
+  .tm-edges,
+  .tm-segs,
+  .tm-mrows {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .tm-erow,
+  .tm-srow,
+  .tm-mrow {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px;
+    border-radius: 5px;
+  }
+  .tm-erow.is-sel,
+  .tm-mrow.is-sel {
+    background: var(--tm-accent-soft);
+  }
+  .tm-ei {
+    flex: none;
+    width: 18px;
+    font-size: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--tm-ink-3);
+    text-align: right;
+  }
+  .tm-eu {
+    flex: 1;
+    font-size: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--tm-ink-3);
+  }
+  .tm-erow .tm-input,
+  .tm-srow .tm-input,
+  .tm-mrow .tm-input {
+    flex: 1;
+    min-width: 0;
+    padding: 2px 5px;
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .tm-erow button,
+  .tm-srow button,
+  .tm-mrow button {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    line-height: 1;
+    color: var(--tm-ink-3);
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .tm-erow button:hover:not(:disabled),
+  .tm-srow button:hover:not(:disabled),
+  .tm-mrow button:hover {
+    background: var(--tm-line);
+    color: var(--tm-danger);
+  }
+  .tm-srow button:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+
+  .tm-note {
+    margin-top: 6px;
+    padding: 6px 8px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--tm-ink-2);
+    background: var(--tm-sunken);
+    border-radius: 6px;
+  }
+
+  .tm-hint {
+    padding: 10px;
+    font-size: 11px;
+    color: var(--tm-ink-3);
+    text-align: center;
+  }
+
+  /* 拖动时的文本选中会干扰交互 */
+  .tm-root,
+  .tm-canvas {
+    user-select: none;
+  }
+  .tm-input,
+  .tm-ntext,
+  .tm-sname {
+    user-select: text;
+  }
+</style>

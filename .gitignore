@@ -3,6 +3,11 @@ dist/
 .vercel/
 public/tianyuanFood/
 
+# Astro / Vite 缓存（含 content store 与预构建依赖，每次 build 都会重新生成）
+.astro/
+.vite/
+.vite-tm-verify/
+
 # 依赖
 node_modules/
 
