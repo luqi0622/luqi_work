@@ -12,6 +12,32 @@ import { cloneDoc, normalize } from './model';
 
 const KEY = 'timing-doc-v1';
 const LAST_KEY = 'timing-last-v1';
+const NAMEW_KEY = 'timing-namew-v1';
+
+/** 信号名列宽的下限/上限：太窄名字全被截断，太宽挤掉波形 */
+export const NAME_W_MIN = 72;
+export const NAME_W_MAX = 320;
+
+/** 读列宽，非法或越界一律回落到默认值 */
+export function loadNameWidth(fallback: number): number {
+  try {
+    const raw = localStorage.getItem(NAMEW_KEY);
+    if (!raw) return fallback;
+    const v = Number(raw);
+    if (!Number.isFinite(v)) return fallback;
+    return Math.max(NAME_W_MIN, Math.min(NAME_W_MAX, Math.round(v)));
+  } catch {
+    return fallback;
+  }
+}
+
+export function saveNameWidth(w: number): void {
+  try {
+    localStorage.setItem(NAMEW_KEY, String(Math.round(w)));
+  } catch {
+    /* 隐私模式：静默降级 */
+  }
+}
 
 /** 存当前文档（存前先normalize，防止把脏数据写进去占地方） */
 export function save(doc: TimingDoc): void {

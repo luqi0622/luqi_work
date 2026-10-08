@@ -61,6 +61,8 @@ export class TimingEditor {
   private doc: TimingDoc;
   private hist: History = { past: [], future: [], limit: 80 };
   private px = PX_DEFAULT;
+  /** 信号名列宽（可拖拽调整，持久化到 localStorage） */
+  private nameW = GEO.nameW;
   private selId = '';
   /** 选中的边沿索引（-1 = 没选） */
   private selEdge = -1;
@@ -68,8 +70,13 @@ export class TimingEditor {
   private selSpan = '';
   private hint = '';
 
-  // 拖拽状态
+  /** 拖拽状态（波形边沿/游标/标注） */
   private drag: { kind: 'edge' | 'marker' | 'span1' | 'span2' | 'newmarker'; sigId: string; idx: number } | null = null;
+  /** 列宽拖拽状态，与上面的波形拖拽互不干扰 */
+  private resizeDrag: { startX: number; startW: number } | null = null;
+  /** 手动双击判定：上一次手柄按下的时间戳与「第一次是否真的拖过」标记 */
+  private lastResizeDown = 0;
+  private resizeDragged = false;
 
   private root: HTMLElement;
   private els: Record<string, HTMLElement> = {};
@@ -80,6 +87,7 @@ export class TimingEditor {
     this.doc = store.load() ?? emptyDoc();
     bumpIdSeq(this.doc);
     if (this.doc.signals.length > 0) this.selId = this.doc.signals[0].id;
+    this.nameW = store.loadNameWidth(GEO.nameW);
     this.buildSkeleton();
     this.render();
   }
@@ -148,7 +156,15 @@ export class TimingEditor {
               名字列的每一项行高=rowH，与波形行严格对齐（测量过diff 恒为 0），
               这样横向滚动时名字不动、纵向对齐靠行高保证。
             -->
-            <div class="tm-names" data-el="namesCol"></div>
+            <!--
+              单一信号名列：显示名字 / 选中 / 上下移删除 / 拖拽调宽度。
+              名字渲染进 .tm-names-list 而不是直接写 namesCol.innerHTML ——
+              否则每次重绘都会把里面的 resizer 手柄一起冲掉。
+            -->
+            <div class="tm-names" data-el="namesCol">
+              <div class="tm-names-list" data-el="namesList"></div>
+              <div class="tm-resizer" data-el="resizer" title="拖动调整信号名列宽（双击恢复默认）"></div>
+            </div>
             <div class="tm-scroll" data-el="scroll">
               <div class="tm-inner" data-el="inner">
                 <div class="tm-axis" data-el="axis"></div>
@@ -175,7 +191,7 @@ export class TimingEditor {
     // querySelector 取到先出现的那个，于是 132px×294px 的样式被打在了复选框上 ——
     // 表现为工具栏中间浮着一个巨大的蓝色对勾方块。名字改到 showNames/namesCol 就是为了根治。
     for (const k of [
-      'title', 'preset', 'canvas', 'namesCol', 'scroll', 'inner', 'axis', 'rows',
+      'title', 'preset', 'canvas', 'namesCol', 'namesList', 'resizer', 'scroll', 'inner', 'axis', 'rows',
       'overlay', 'inspector', 'status', 'saved', 'sigcount', 'unit', 'major', 'len',
       'zoom', 'snap', 'empty', 'showNames',
     ]) {
@@ -200,7 +216,7 @@ export class TimingEditor {
    */
   private assertSkeleton(): void {
     const required = [
-      'title', 'preset', 'canvas', 'namesCol', 'scroll', 'inner', 'axis', 'rows',
+      'title', 'preset', 'canvas', 'namesCol', 'namesList', 'resizer', 'scroll', 'inner', 'axis', 'rows',
       'overlay', 'inspector', 'status', 'saved', 'sigcount', 'unit', 'major', 'len',
       'zoom', 'snap', 'empty', 'showNames',
     ];
@@ -260,11 +276,13 @@ export class TimingEditor {
     const opts = { pxPerTick: this.px, nameW: 0 };
     const w = this.doc.lengthTicks * this.px;
     const h = contentHeight(this.doc, opts);
-    const totalW = w + (this.showNames ? GEO.nameW : 0);
+    // .tm-inner 在 .tm-scroll 内部，而 .tm-scroll 本身已被名字列推开，
+    // 所以 inner 的宽度只等于波形宽 w —— 之前多加了 nameW，
+    // 会在右侧多出一条同样宽的空白滚动区。
     const axisH = GEO.axisH;
     const rowsH = GEO.padTop + this.doc.signals.length * GEO.rowH;
 
-    this.els.inner.style.width = `${totalW}px`;
+    this.els.inner.style.width = `${w}px`;
     this.els.axis.style.width = `${w}px`;
     this.els.rows.style.width = `${w}px`;
 
@@ -349,10 +367,13 @@ export class TimingEditor {
     // 而波形行在 `.tm-rows` 内，起点在 axis 之下。所以名字要补上 axisH 才能落到同一水平位置。
     // 改这里之前是 + axisH，验收脚本量的 diff 恒为 0（它比的是同一个坐标系下的绝对 top，
     // 恰好抵消了），但截图里名字整体低了一行 —— 现在改为按真实像素位置断言。
+    const colW = this.showNames ? this.nameW : 0;
     this.els.namesCol.style.height = `${axisH + rowsH}px`;
-    this.els.namesCol.style.width = this.showNames ? `${GEO.nameW}px` : '0px';
+    this.els.namesCol.style.width = `${colW}px`;
     this.els.namesCol.style.display = this.showNames ? '' : 'none';
-    this.els.namesCol.innerHTML = this.doc.signals
+    // 写进 namesList 而不是 namesCol —— resizer 手柄是 namesCol 的子节点，
+    // 直接写 innerHTML 会把它连同 cursor/事件一起冲掉
+    this.els.namesList.innerHTML = this.doc.signals
       .map((s, i) => {
         const sel = s.id === this.selId ? ' is-sel' : '';
         const last = i === this.doc.signals.length - 1;
@@ -646,6 +667,65 @@ export class TimingEditor {
     // ---- 拖拽 ----
     window.addEventListener('pointermove', (e) => this.onPointerMove(e));
     window.addEventListener('pointerup', () => this.onPointerUp());
+
+    // ---- 信号名列宽拖拽 ----
+    // 独立于波形拖拽的另一套状态：手柄有自己的一组 pointer 事件，
+    // 混进 onPointerDown 的话会和「拖边沿」抢 drag 槽位。
+    //
+    // **刻意不用 setPointerCapture**：捕获后事件被重定向到手柄本身，
+    // 挂在 window 上的 pointermove 就收不到了，表现为「拖拽毫无反应」。
+    //
+    // **双击复位用手动判定，不用原生 dblclick 事件**：
+    // 手柄 pointerdown 上的 preventDefault() 会抑制浏览器兼容鼠标事件
+    // （mousedown/mouseup/click/dblclick），原生 dblclick 永远不触发 ——
+    // 真实用户双击也复不了位，只能自己数两次按下。判定规则：
+    // 两次按下间隔 < 350ms 且「第一次没有真的拖动过」，才算双击。
+    // 这样既修复了复位，又避开「快速连续两次拖拽」被误判成双击。
+    const resizer = this.els.resizer;
+    resizer.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation(); // 别让画布的 pointerdown 接手
+      const now = e.timeStamp;
+      const wasDrag = this.resizeDragged;
+      this.resizeDragged = false;
+      if (this.lastResizeDown && !wasDrag && now - this.lastResizeDown < 350) {
+        // 双击：复位到默认宽度
+        this.lastResizeDown = 0;
+        this.nameW = GEO.nameW;
+        this.els.namesCol.style.width = `${GEO.nameW}px`;
+        this.resizeDrag = null;
+        this.root.classList.remove('is-resizing');
+        this.els.namesCol.classList.remove('is-resizing');
+        store.saveNameWidth(this.nameW);
+        this.setStatus(`列宽已复位为 ${GEO.nameW}px`);
+        return;
+      }
+      this.lastResizeDown = now;
+      this.resizeDrag = { startX: e.clientX, startW: this.nameW };
+      this.root.classList.add('is-resizing');
+      this.els.namesCol.classList.add('is-resizing');
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (!this.resizeDrag) return;
+      const dx = e.clientX - this.resizeDrag.startX;
+      if (Math.abs(dx) > 3) this.resizeDragged = true; // 发生过明显移动 → 算一次拖拽，不算双击
+      const next = Math.max(
+        store.NAME_W_MIN,
+        Math.min(store.NAME_W_MAX, this.resizeDrag.startW + dx),
+      );
+      if (next === this.nameW) return;
+      this.nameW = next;
+      // 只改列宽，不整表重绘 —— 拖拽时 60fps 全量重绘会明显卡
+      this.els.namesCol.style.width = `${next}px`;
+      this.setStatus(`信号名列宽 ${next}px（双击手柄可复位）`);
+    });
+    window.addEventListener('pointerup', () => {
+      if (!this.resizeDrag) return;
+      this.resizeDrag = null;
+      this.root.classList.remove('is-resizing');
+      this.els.namesCol.classList.remove('is-resizing');
+      store.saveNameWidth(this.nameW);
+    });
 
     // ---- 键盘 ----
     window.addEventListener('keydown', (e) => this.onKeyDown(e));

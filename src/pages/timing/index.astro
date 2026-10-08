@@ -288,37 +288,6 @@ import BaseLayout from '@/layouts/BaseLayout.astro';
     border-radius: 4px;
   }
 
-  .tm-sact {
-    display: none;
-    gap: 1px;
-    flex: none;
-  }
-  .tm-sig:hover .tm-sact,
-  .tm-sig.is-sel .tm-sact {
-    display: flex;
-  }
-  .tm-sact button {
-    width: 18px;
-    height: 18px;
-    display: grid;
-    place-items: center;
-    font-size: 11px;
-    line-height: 1;
-    color: var(--tm-ink-2);
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  .tm-sact button:hover:not(:disabled) {
-    background: var(--tm-line);
-    color: var(--tm-ink);
-  }
-  .tm-sact button:disabled {
-    opacity: 0.3;
-    cursor: default;
-  }
-
   .tm-adds {
     display: flex;
     gap: 4px;
@@ -513,6 +482,12 @@ import BaseLayout from '@/layouts/BaseLayout.astro';
     border-right: 1px solid var(--tm-line-2);
     overflow: hidden;
   }
+  /* 名字渲染容器：与 .tm-names 分层，让 resizer 手柄能一直留在 DOM 里。
+     若直接把名字写进 .tm-names.innerHTML，每次重绘都会把手柄冲掉。 */
+  .tm-names-list {
+    position: absolute;
+    inset: 0;
+  }
   .tm-name {
     position: absolute;
     left: 0;
@@ -530,6 +505,18 @@ import BaseLayout from '@/layouts/BaseLayout.astro';
   .tm-name.is-sel {
     background: var(--tm-accent-soft);
     color: var(--tm-accent);
+  }
+  /*
+   * 类型标签（时钟/数字/总线/模拟）默认隐藏，悬浮或选中时才出现。
+   * 名字列的可视宽度优先给信号名 —— 类型信息是辅助的，不该挤占名字空间，
+   * 尤其在信号名本来就长（DQS_t、/RESET#、DATA[15:0]）的时候。
+   */
+  .tm-name .tm-kind {
+    display: none;
+  }
+  .tm-name:hover .tm-kind,
+  .tm-name.is-sel .tm-kind {
+    display: block;
   }
   .tm-ndot {
     width: 8px;
@@ -582,6 +569,60 @@ import BaseLayout from '@/layouts/BaseLayout.astro';
   }
   .tm-name.is-sel .tm-kind {
     border-color: currentColor;
+  }
+
+  /* ---- 列宽拖拽手柄 ---- */
+  /*
+   * 两个坑（都实测踩过）：
+   *
+   * 1) **不能靠 `right: -5px` 把命中区放到列外侧**。.tm-names 是 overflow:hidden，
+   *    露在外面的 5px 会被裁掉 —— 手柄看着在那儿，elementFromPoint 却返回 .tm-canvas，
+   *    pointerdown 根本不落在它身上。正确做法：命中区整体收进列内（right: 0），
+   *    视觉上用 2px 宽的竖线 + 10px 透明内边距来「假装」更宽。
+   *
+   * 2) **不要用 setPointerCapture**。它会把后续事件重定向到捕获元素，
+   *    于是挂在 window 上的 pointermove 收不到，拖拽看起来毫无反应。
+   *    需要的是「指针移出手柄范围也继续拖」，靠 window 监听就够了。
+   *
+   * 3) 手柄高度要显式给 100%，父级 .tm-names 有 height（内联设置），
+   *    但 .tm-names-list 才是内容容器 —— 手柄是 .tm-names 的直接子节点，
+   *    高度百分比相对 .tm-names 解析，没问题。
+   */
+  .tm-resizer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 10px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 5;
+    touch-action: none;
+    background: transparent;
+  }
+  /* 2px 视觉线居中在 10px 命中区里，hover / 拖拽时变强调色 */
+  .tm-resizer::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: transparent;
+    transition: background 0.12s;
+  }
+  .tm-resizer:hover::after,
+  .tm-names.is-resizing .tm-resizer::after {
+    background: var(--tm-accent);
+  }
+  .tm-names.is-resizing {
+    cursor: col-resize;
+    user-select: none;
+  }
+  /* 拖拽期间禁止选中，否则鼠标一移就选中一片文字 */
+  .tm-root.is-resizing,
+  .tm-root.is-resizing * {
+    cursor: col-resize !important;
+    user-select: none !important;
   }
 
   .tm-empty {

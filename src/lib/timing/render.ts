@@ -20,9 +20,16 @@ import {
 } from './types';
 import { busValueAt, clockEdges, crossHalfWidth, digitalLevelAt, toHex } from './model';
 
-/** 几何常量（导出用同一份，屏幕与导出结果才能一致） */
+/**
+ * 几何常量（导出用同一份，屏幕与导出结果才能一致）
+ *
+ * 标注 `satisfies Record<string, number>` 而不是 `as const`：
+ * `as const` 会把每个值定成字面量类型（nameW 的类型是 `132` 而不是 `number`），
+ * 于是 `let w = GEO.nameW` 之后再 `w = 200` 就报类型错误。
+ * 列宽可拖拽之后这类重新赋值很常见，字面量类型反而碍事。
+ */
 export const GEO = {
-  /** 左侧信号名列宽 */
+  /** 信号名列默认宽（用户可拖拽调整，实际值存在编辑器状态里） */
   nameW: 132,
   /** 时间轴条高 */
   axisH: 26,
@@ -34,7 +41,7 @@ export const GEO = {
   ampRatio: 0.62,
   /** 总线 X 交叉的最大半宽（像素） */
   crossMaxW: 9,
-} as const;
+} satisfies Record<string, number>;
 
 export interface RenderOpts {
   /** 每个 tick 多少像素 */
