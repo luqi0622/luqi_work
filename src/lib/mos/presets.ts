@@ -76,7 +76,6 @@ function fet(
     flip: false,
     label,
     color: null,
-    bodyTied: false,
     w: '1u',
     l: '65n',
     model: '',
@@ -137,7 +136,7 @@ function posOf(b: Builder, e: Endpoint): Pt {
   if (e.kind === 'free') return { x: e.x, y: e.y };
   const c = b.comps.find((k) => k.id === e.ref.comp);
   if (!c) return { x: 0, y: 0 };
-  const names = portNames(c.kind, isMos(c) ? c.bodyTied : false);
+  const names = portNames(c.kind);
   const name = names.includes(e.ref.port) ? e.ref.port : names[0];
   return portWorld(c, name);
 }
@@ -147,7 +146,7 @@ function pcDir(b: Builder, e: Endpoint): Dir {
   if (e.kind === 'free') return 'U';
   const c = b.comps.find((k) => k.id === e.ref.comp);
   if (!c) return 'U';
-  const names = portNames(c.kind, isMos(c) ? c.bodyTied : false);
+  const names = portNames(c.kind);
   const name = names.includes(e.ref.port) ? e.ref.port : names[0];
   return portDirWorld(c, name);
 }
@@ -213,9 +212,6 @@ function cmosInverter(): MosDoc {
   // 输入同时驱动两管栅极：走 x=-34 竖直干线
   link(b, port(inp, 'p'), port(p, 'g'));
   link(b, port(inp, 'p'), port(n, 'g'));
-  // 衬底：栅极同列，往左绕到电源轨
-  link(b, port(p, 'b'), port(vdd, 'p'));
-  link(b, port(n, 'b'), port(vss, 'p'));
 
   note(b, -220, 40, '输入同时驱动两管栅极');
   return finish(b, 'CMOS 反相器');
@@ -254,10 +250,6 @@ function diffPair(): MosDoc {
   link(b, port(rl2, 'p'), port(vdd, 'p'));
   link(b, port(rl1, 'p'), port(out1, 'p'));
   link(b, port(rl2, 'p'), port(out2, 'p'));
-  // NMOS 衬底统一接 VSS
-  link(b, port(m1, 'b'), port(vss, 'p'));
-  link(b, port(m2, 'b'), port(vss, 'p'));
-  link(b, port(tail, 'b'), port(vss, 'p'));
 
   note(b, -320, 400, '两侧对称，栅极差分输入');
   return finish(b, 'NMOS 差分对');
@@ -283,9 +275,6 @@ function currentMirror(): MosDoc {
   link(b, port(out, 'd'), port(iout, 'p'));
   link(b, port(ref, 's'), port(vss, 'p'));
   link(b, port(out, 's'), port(vss, 'p'));
-  // NMOS 衬底接 VSS
-  link(b, port(ref, 'b'), port(vss, 'p'));
-  link(b, port(out, 'b'), port(vss, 'p'));
 
   note(b, -280, 200, 'W:L = 1:2 → 镜像比 2:1');
   return finish(b, 'NMOS 电流镜');
@@ -315,9 +304,6 @@ function commonSource(): MosDoc {
   link(b, port(m1, 'd'), port(cout, 'p'));
   link(b, port(cout, 'n'), port(vout, 'p'));
   link(b, port(m1, 'd'), port(vout, 'p'));
-  // 衬底：NMOS 接 VSS，PMOS 接 VDD
-  link(b, port(m1, 'b'), port(vss, 'p'));
-  link(b, port(m2, 'b'), port(vdd, 'p'));
 
   note(b, -380, -120, '共源级：反相电压放大');
   return finish(b, '共源放大器');
@@ -339,7 +325,6 @@ function gateProtection(): MosDoc {
   link(b, port(pad, 'p'), port(core, 'g'));
   link(b, port(core, 'd'), port(vdd, 'p'));
   link(b, port(core, 's'), port(vss, 'p'));
-  link(b, port(core, 'b'), port(vss, 'p'));
 
   // 二极管钳位：把栅压限制在 VSS ~ VDD+0.7
   link(b, port(dTop, 'n'), port(vdd, 'p'));
@@ -384,14 +369,6 @@ function schmittTrigger(): MosDoc {
   link(b, port(mp3, 'g'), port(vin, 'p'));
   link(b, port(mn3, 'g'), port(vin, 'p'));
   link(b, port(vout, 'p'), port(mp3, 'd'));
-
-  // 衬底：PMOS 接 VDD，NMOS 接 VSS
-  link(b, port(mp1, 'b'), port(vdd, 'p'));
-  link(b, port(mp2, 'b'), port(vdd, 'p'));
-  link(b, port(mp3, 'b'), port(vdd, 'p'));
-  link(b, port(mn1, 'b'), port(vss, 'p'));
-  link(b, port(mn2, 'b'), port(vss, 'p'));
-  link(b, port(mn3, 'b'), port(vss, 'p'));
 
   note(b, -360, 220, '正反馈抬高迟滞电压，两个阈值不等');
   return finish(b, '施密特触发器');

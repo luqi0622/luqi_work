@@ -109,6 +109,16 @@ export type CompKind =
   | 'junction'
   | 'jump';
 
+/**
+ * 元件库里的可放置项。
+ *
+ * 比CompKind 多一个 `'note'`：文本不是元件（不占CompKind、不进
+ * components 数组、没有端口），它进的是 `doc.texts`。
+ * 用联合类型而不是硬塞进 CompKind，是为了不给「文本」凭空造出
+ * 端口表、包围盒、符号 path 这些它用不到的东西。
+ */
+export type PaletteKind = CompKind | 'note';
+
 interface CompBase {
   id: string;
   kind: CompKind;
@@ -122,23 +132,17 @@ interface CompBase {
   label: string;
   /** 引线颜色，null= 用全局默认 */
   color: ColorToken | null;
-  /**
-   * 标注相对「紧贴 bbox 右侧」默认位置的偏移，世界坐标。
-   *
-   * 为什么存偏移而不是绝对坐标：标注默认位置由 bbox 推导，而 bbox 会随
-   * 旋转/镜像变化。存偏移才能让标注既能被拖走、又保留「元件移动/旋转时
-   * 标注自动跟随」的性质。
-   */
-  labelOff?: Pt;
-  /** true = 不显示该元件的标注（M1 这种实例名可以只留在属性面板里） */
-  labelHidden?: boolean;
 }
 
-/** MOS 晶体管。四端（body 独立）或三端（体短接到源） */
+/**
+ * MOS 晶体管 —— **三端**（栅 / 漏 / 源）。
+ *
+ * 曾经有 `bodyTied`（四端/三端变体）。现在固定三端：画电路时衬底几乎总是
+ * 接全局 VDD/VSS，逐管引一个用不上的 body 脚只会让布线多出必接的虚线。
+ * 沟道类型靠栅极气泡区分（N 无气泡 / P 有气泡），标准画法，语义不丢。
+ */
 export interface MosFet extends CompBase {
   kind: 'nmos' | 'pmos';
-  /** true = 三端（体短接），b 端口不存在 */
-  bodyTied: boolean;
   model?: string;
   w?: string;
   l?: string;
@@ -228,6 +232,12 @@ export const COMP_LABEL: Record<CompKind, string> = {
   port: '信号引出',
   junction: '接点',
   jump: '跨线',
+};
+
+/** 元件库按钮文案。`'note'` 不在 COMP_LABEL 里（它不是元件） */
+export const PALETTE_LABEL: Record<PaletteKind, string> = {
+  ...COMP_LABEL,
+  note: '文本',
 };
 
 // ============================================================================

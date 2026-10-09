@@ -49,21 +49,10 @@ export const SYM = {
   portDY: 34,
   /** 栅极端口的 x 偏移 */
   gateX: -34,
-  /**
-   * 体端口的 y 偏移。
-   *
-   * **体极画在栅极同侧（左），不画在右边。** 这是 MOS 原理图的标准画法：
-   * 衬底线从栅极下方引出，和栅极共用左侧的竖直干线，布线时不会绕到
-   * 器件另一侧去（早期版本把 b 端口放在右侧 dir=R，导致每一根衬底线
-   * 都要绕到右边再折回电源轨，视觉上一堆大回路）。
-   */
-  bodyY: 44,
-  /** PMOS 栅极气泡半径 */
+  /** PMOS 栅极气泡半径 —— 三端符号下，**气泡是区分 N/P 管的唯一依据** */
   bubbleR: 4,
   /** 气泡圆心到栅极板的距离 */
   bubbleOff: 4,
-  /** 衬底箭头长度 */
-  arrowLen: 10,
 
   // ---- 两端元件 ----
   /** 端口到图形的引线长度 */
@@ -109,11 +98,11 @@ const CH_SEGS: Array<[number, number]> = (() => {
 // ============================================================================
 
 /** rot=0、未镜像时的端口局部坐标与出线方向 */
-const PORTS_NMOS4: Record<string, { p: Pt; dir: Dir }> = {
+/** MOS 端口表。**只有栅/漏/源三端** —— 不提供 body 引脚 */
+const PORTS_NMOS3: Record<string, { p: Pt; dir: Dir }> = {
   g: { p: { x: SYM.gateX, y: 0 }, dir: 'L' },
   d: { p: { x: SYM.leadX, y: -SYM.portDY }, dir: 'U' },
   s: { p: { x: SYM.leadX, y: SYM.portDY }, dir: 'D' },
-  b: { p: { x: SYM.gateX, y: SYM.bodyY }, dir: 'L' },
 };
 
 const V: Record<string, { p: Pt; dir: Dir }> = {
@@ -149,16 +138,22 @@ const JUMP: Record<string, { p: Pt; dir: Dir }> = {
 };
 
 /** 每种元件的端口表。端口名全小写 */
-export function portTable(kind: CompKind, bodyTied = false): Record<string, { p: Pt; dir: Dir }> {
+/**
+ * 端口表。
+ *
+ * **MOS 只有 g/d/s 三端，没有 body 引脚。**
+ *
+ * 曾经提供过四端（带独立衬底）与三端体短接两个变体，符号上还要画衬底
+ * 箭头。现在一律三端：画电路时衬底几乎总是接全局 VDD/VSS，不是逐管画法
+ * 的信息 —— 让每个符号都挂一个用不上的引脚，只会让布线多出一堆必接的
+ * 虚线。沟道类型靠**栅极气泡**区分（N 管无气泡、P 管有），这本身就是
+ * 标准画法，语义不会丢。
+ */
+export function portTable(kind: CompKind): Record<string, { p: Pt; dir: Dir }> {
   switch (kind) {
     case 'nmos':
-    case 'pmos': {
-      if (bodyTied) {
-        const { b: _drop, ...rest } = PORTS_NMOS4;
-        return rest;
-      }
-      return PORTS_NMOS4;
-    }
+    case 'pmos':
+      return PORTS_NMOS3;
     case 'resistor':
     case 'capacitor':
     case 'capPol':
@@ -182,8 +177,8 @@ export function portTable(kind: CompKind, bodyTied = false): Record<string, { p:
   }
 }
 
-export function portNames(kind: CompKind, bodyTied = false): string[] {
-  return Object.keys(portTable(kind, bodyTied));
+export function portNames(kind: CompKind): string[] {
+  return Object.keys(portTable(kind));
 }
 
 // ============================================================================
@@ -230,14 +225,14 @@ export function localToWorld(c: MosComp, p: Pt): Pt {
 
 /** 端口的世界坐标。** 每次实时算，绝不缓存** —— 旋转/移动后自动跟随 */
 export function portWorld(c: MosComp, port: string): Pt {
-  const tbl = portTable(c.kind, isMos(c) ? c.bodyTied : false);
+  const tbl = portTable(c.kind);
   const e = tbl[port] ?? tbl[Object.keys(tbl)[0]];
   return e ? localToWorld(c, e.p) : { x: c.x, y: c.y };
 }
 
 /** 端口的世界出线方向 */
 export function portDirWorld(c: MosComp, port: string): Dir {
-  const tbl = portTable(c.kind, isMos(c) ? c.bodyTied : false);
+  const tbl = portTable(c.kind);
   const e = tbl[port] ?? tbl[Object.keys(tbl)[0]];
   const d = e ? e.dir : 'U';
   // 镜像把 L/R 对调，U/D 不变
@@ -278,20 +273,6 @@ function circle(cx: number, cy: number, r: number): string {
   return `M${cx} ${cy - r}A${r} ${r} 0 0 1 ${cx} ${cy + r}A${r} ${r} 0 0 1 ${cx} ${cy - r}Z`;
 }
 
-/**
- * 箭头（衬底用）。尖端在 (tipX, tipY)，指向 dir。
- * 用两条斜边 + 一条竖边画，箭头朝左/右时视觉更接近工程制图。
- */
-function arrow(tipX: number, tipY: number, dir: 'L' | 'R', len: number = SYM.arrowLen, h = 5): string {
-  const s = dir === 'R' ? -1 : 1; // 尾部相对尖端的方向
-  const bx = tipX + len * s;
-  return poly([
-    { x: tipX, y: tipY },
-    { x: bx, y: tipY - h },
-    { x: bx, y: tipY + h },
-  ], true);
-}
-
 // ============================================================================
 // 各符号的 path 生成（rot=0 局部坐标）
 // ============================================================================
@@ -326,38 +307,7 @@ function channelSegs(): SymSeg {
   return { d: CH_SEGS.map(([y0, y1]) => line(0, y0, 0, y1)).join('') };
 }
 
-/**
- * 衬底（体极）。
- *
- * 约定：**NMOS 箭头指向沟道，PMOS 箭头背离沟道** —— 这是判断沟道类型的
- * 唯一硬依据，画错整张图就废了。旋转时箭头跟着图形转，语义自动保持。
- */
-function bodySegs(c: MosFet): SymSeg[] {
-  const pmos = c.kind === 'pmos';
-  const bx = SYM.gateX;      // 与栅极同列的竖直干线
-  const by = SYM.bodyY;      // 干线上的引出点
-  const ty = by - 12;        // 箭头所在高度
-
-  // 三端：体短接到源，只画箭头不引出端口（箭头仍从左下引出，保持符号可读）
-  if (c.bodyTied) {
-    return pmos
-      ? [{ d: `${line(bx, ty + 12, bx, by)}M${bx} ${ty}A12 12 0 0 1 ${bx + 12} ${ty + 6}` }]
-      : [{ d: `${line(bx, ty + 12, bx, by)}M${bx + 12} ${ty}A12 12 0 0 1 ${bx} ${ty + 6}` }];
-  }
-
-  // 四端：竖直干线 + 指向/背离沟道的箭头
-  // 箭头横跨氧化层：NMOS 尖端朝右（指向沟道），PMOS 尖端朝左（背离沟道）
-  const segs: SymSeg[] = [{ d: line(bx, by, bx, ty + 6) }];
-  if (pmos) {
-    segs.push({ d: `M${bx + 10} ${ty + 6}L${bx + 18} ${ty + 6}` });
-    segs.push({ d: arrow(bx + 22, ty + 6, 'L', 8, 4) });
-  } else {
-    segs.push({ d: `M${bx + 18} ${ty + 6}L${bx + 10} ${ty + 6}` });
-    segs.push({ d: arrow(bx + 6, ty + 6, 'R', 8, 4) });
-  }
-  return segs;
-}
-
+/** 栅极板 + 沟道 + 漏源引线。**三端符号，不含衬底** */
 function mosSegs(c: MosFet): SymSeg[] {
   const pmos = c.kind === 'pmos';
   const lx = SYM.leadX;
@@ -370,7 +320,6 @@ function mosSegs(c: MosFet): SymSeg[] {
     { d: `${line(0, top, lx, top)}${line(lx, top, lx, -SYM.portDY)}` },
     // 源
     { d: `${line(0, bot, lx, bot)}${line(lx, bot, lx, SYM.portDY)}` },
-    ...bodySegs(c),
   ];
 }
 
@@ -563,78 +512,19 @@ export interface LabelItem {
 }
 
 /**
- * 元件的标注 —— 在**世界坐标**里定位，且渲染在旋转组之外。
+ * 元件的自动标注 —— **恒为空**。
  *
- * 位置用局部 bbox 算完再变换，所以旋转/镜像时标注会跟着元件走，
- * 但**始终保持水平**（这是文本不旋转的正确实现方式）。
+ * 曾经在这里自动生成「实例名 + W/L + Vt」两行文字，结果画完一堆管子
+ * 满屏都是 M1/2u/65n，压住连线、糊住栅极。
  *
- * `labelOff` / `labelHidden` 在这里收口：渲染、包围盒、导出三条路径
- * 都调用本函数，所以「拖走标注」和「隐藏标注」只要改这两个字段，
- * 不需要各自再实现一遍偏移逻辑。
+ * 现在**元件一律不带标注**：要写字就放一个「文本」元件。附带好处是
+ * 实例名退回「属性面板里的一个字段」，不再干扰读图，导出 SVG 也不会
+ * 莫名多出一堆 M1。
+ *
+ * 函数保留（而非删掉三处调用点）是因为渲染、包围盒、命中测试都按
+ * 「元件可能带标注」的形状写的；留一个恒空实现省掉一轮无谓的分支改动，
+ * 将来若要做「批量显示实例名」，改这一处即可。
  */
-export function compLabels(c: MosComp): LabelItem[] {
-  if (c.labelHidden) return [];
-  const bb = compBBox(c);
-  const off = c.labelOff ?? { x: 0, y: 0 };
-  const out: LabelItem[] = [];
-  const push = (text: string, size: number, color: ColorToken, bold: boolean) => {
-    if (!text) return;
-    out.push({
-      x: bb.x + bb.w + 9 + off.x,
-      y: bb.y + bb.h / 2 + size * 0.35 + off.y,
-      text,
-      size,
-      align: 'left',
-      color,
-      bold,
-    });
-  };
-
-  if (isMos(c)) {
-    const sub = [c.w, c.l].filter(Boolean).join('/');
-    const vth = c.vth ? ` Vt=${c.vth}` : '';
-    push(c.label, 13, 'ink', true);
-    if (c.model || sub || vth) {
-      const line2 = `${c.model ?? ''}${sub ? ` ${sub}` : ''}${vth}`.trim();
-      if (line2) {
-        out.push({
-          x: bb.x + bb.w + 9 + off.x,
-          y: bb.y + bb.h / 2 + 13 * 0.35 + 15 + off.y,
-          text: line2,
-          size: 11,
-          align: 'left',
-          color: 'muted',
-          bold: false,
-        });
-      }
-    }
-    return out;
-  }
-
-  switch (c.kind) {
-    case 'resistor':
-    case 'capacitor':
-    case 'capPol':
-    case 'diode':
-    case 'zener': {
-      push(c.label, 13, 'ink', true);
-      push(c.value ?? '', 12, 'muted', false);
-      return out;
-    }
-    case 'vsrc':
-    case 'isrc': {
-      push(c.label, 13, 'ink', true);
-      push(c.value ?? '', 12, 'muted', false);
-      return out;
-    }
-    case 'vdd':
-    case 'gnd':
-    case 'port': {
-      push(c.net || (c.kind === 'gnd' ? 'VSS' : 'VDD'), 13, 'ink', true);
-      push(c.level ?? '', 11, 'muted', false);
-      return out;
-    }
-    default:
-      return out;
-  }
+export function compLabels(_c: MosComp): LabelItem[] {
+  return [];
 }

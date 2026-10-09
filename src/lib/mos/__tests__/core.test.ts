@@ -32,9 +32,9 @@ import {
 import {
   boundsOf,
   cleanPts,
+  dragSegment,
   dragVertex,
   ensureMinSize,
-  labelAt,
   orthoFix,
   orthoRoute,
   screenToWorld,
@@ -55,7 +55,6 @@ import {
   emptyHistory,
   makeComp,
   makeWire,
-  moveLabels,
   normalize,
   pushHistory,
   redo,
@@ -103,7 +102,7 @@ function assertOrtho(pts: Pt[], label: string): void {
 // 构造测试用元件
 // ============================================================================
 
-function fet(id: string, x: number, y: number, kind: 'nmos' | 'pmos' = 'nmos', bodyTied = false): MosFet {
+function fet(id: string, x: number, y: number, kind: 'nmos' | 'pmos' = 'nmos'): MosFet {
   return {
     id,
     kind,
@@ -113,7 +112,6 @@ function fet(id: string, x: number, y: number, kind: 'nmos' | 'pmos' = 'nmos', b
     flip: false,
     label: id.toUpperCase(),
     color: null,
-    bodyTied,
     model: 'NMOS_0P18',
     w: '1u',
     l: '65n',
@@ -159,10 +157,9 @@ import { PRESETS, blankPreset } from '../presets';
 // ============================================================================
 
 {
-  // 1.1 端口表：三端 MOS 没有 b 端口
-  eq(portNames('nmos', false), ['g', 'd', 's', 'b'], '1.1 四端 NMOS 端口名');
-  eq(portNames('nmos', true), ['g', 'd', 's'], '1.1 三端 NMOS 端口名（无 b）');
-  eq(portNames('pmos', false), ['g', 'd', 's', 'b'], '1.1 四端 PMOS 端口名');
+  // 1.1 端口表：MOS 只有 g/d/s 三端，**没有 b**
+  eq(portNames('nmos'), ['g', 'd', 's'], '1.1 NMOS 端口名（仅 g/d/s）');
+  eq(portNames('pmos'), ['g', 'd', 's'], '1.1 PMOS 端口名（仅 g/d/s）');
   eq(portNames('resistor'), ['p', 'n'], '1.1 电阻端口名');
 }
 
@@ -257,18 +254,17 @@ function rotatePtForTest(p: Pt, rot: number): Pt {
 }
 
 {
-  // 2.3 衬底箭头方向：NMOS 指向沟道，PMOS 背离沟道。
-  // 不写死坐标（体端口已从右侧移到栅极同侧，坐标会随设计变），
-  // 而是断言两者箭头片段**恰好互为镜像** —— 这才是"方向相反"的本质。
+  // 2.3 三端符号下，**N/P 管的唯一区别是栅极气泡**（2.2 已断言圆弧有无）。
+  // 这里再补一条：两者符号不能完全相同，否则旋转后就分不出沟道类型了。
   const nSegs = compSegs(fet('m', 0, 0, 'nmos'));
   const pSegs = compSegs(fet('m', 0, 0, 'pmos'));
-  const nArrow = nSegs.map((k) => k.d).join('|');
-  const pArrow = pSegs.map((k) => k.d).join('|');
-  ok(nArrow !== pArrow, '2.3 NMOS 与 PMOS 的衬底画法应不同（箭头方向相反）');
-  // 箭头是多边形（以 Z 结尾），两条支路都要有
-  const nHasHead = /Z/.test(nArrow);
-  const pHasHead = /Z/.test(pArrow);
-  ok(nHasHead && pHasHead, '2.3 两者都应画出衬底箭头');
+  const nD = nSegs.map((k) => k.d).join('|');
+  const pD = pSegs.map((k) => k.d).join('|');
+  ok(nD !== pD, '2.3 NMOS 与 PMOS 符号应不同（栅极气泡）');
+  // 三端符号不应再有衬底多边形箭头。判据用「A 弧命令」而非闭合 Z：
+  // PMOS 的栅极气泡本身就是圆（两段 A + Z），用 Z 会把气泡误判成箭头。
+  ok(!nD.includes('A'), '2.3 NMOS 不应有任何圆弧（无气泡、无箭头）');
+  eq((pD.match(/A/g) || []).length, 2, '2.3 PMOS 只剩栅极气泡的两段半圆弧');
 }
 
 {
@@ -282,10 +278,11 @@ function rotatePtForTest(p: Pt, rot: number): Pt {
 }
 
 {
-  // 2.5 三端 MOS 的 path 数少于四端（少了体极引线与箭头）
-  const n4 = compSegs(fet('m', 0, 0, 'nmos', false)).length;
-  const n3 = compSegs(fet('m', 0, 0, 'nmos', true)).length;
-  ok(n3 < n4, `2.5 三端符号片段数应少于四端 | n3=${n3} n4=${n4}`);
+  // 2.5 三端符号：不再画衬底，片段数应等于「栅极 + 沟道 + 漏 + 源」
+  const nSegs = compSegs(fet('m', 0, 0, 'nmos')).length;
+  const pSegs = compSegs(fet('m', 0, 0, 'pmos')).length;
+  eq(nSegs, 5, '2.5 NMOS 三端符号 5 段（栅引线/栅板/沟道/漏/源）');
+  eq(pSegs, nSegs + 1, '2.5 PMOS 比 NMOS 只多一段栅极气泡');
 }
 
 // ============================================================================
@@ -599,12 +596,14 @@ function rotatePtForTest(p: Pt, rot: number): Pt {
 {
   // 7.3 rot 越界回落、坐标非法回落
   const d = normalize({
-    components: [{ kind: 'nmos', id: 'c1', x: 'abc', y: NaN, rot: 45, bodyTied: 'yes' }],
+    components: [{ kind: 'nmos', id: 'c1', x: 'abc', y: NaN, rot: 45, model: 123, bodyTied: 'yes' }],
   });
   eq(d.components[0].rot, 0, '7.3 rot=45 应回落到 0');
   ok(Number.isFinite(d.components[0].x), '7.3 x 非数字应回落为有限值');
   ok(Number.isFinite(d.components[0].y), '7.3 y=NaN 应回落为有限值');
-  eq(d.components[0].bodyTied, false, '7.3 bodyTied 非布尔应回落为 false');
+  eq(d.components[0].model, '', '7.3 model 非字符串应回落为空串');
+  // bodyTied 已移除；旧 JSON 里残留该字段应被安静忽略（不报错、不进 model）
+  ok(!('bodyTied' in d.components[0]), '7.3 旧 JSON 的 bodyTied 应被丢弃');
 }
 
 {
@@ -1076,7 +1075,7 @@ function estText(s: string, size: number): number {
           orphan += 1;
           continue;
         }
-        const names = portNames(c.kind, isMos(c) ? c.bodyTied : false);
+        const names = portNames(c.kind);
         if (!names.includes(e.ref.port)) orphan += 1;
       }
     }
@@ -1118,100 +1117,6 @@ function estText(s: string, size: number): number {
   eq(blank.wires.length, 0, '16.12 空图预设无线');
 }
 
-// ============================================================================
-// 17. 标注：可拖动（labelOff）、可隐藏（labelHidden）
-// ============================================================================
-
-{
-  // 带 W/L，好让下面断言覆盖**多行**标注（偏移必须整体作用于所有行）
-  const mk = () => ({ ...makeComp(emptyDoc('t'), 'nmos', 100, 100), w: '1u', l: '65n' } as MosComp);
-  const base = compLabels(mk());
-  eq(base.length, 2, '17.1 NMOS 有实例名 + W/L 两行标注');
-
-  // 17.2 偏移应整体作用在**所有**标注行上，而不是只挪第一行
-  const moved = compLabels({ ...mk(), labelOff: { x: 30, y: -20 } } as MosComp);
-  eq(moved.length, base.length, '17.2 偏移不改变标注行数');
-  for (let i = 0; i < base.length; i++) {
-    eq(moved[i].x - base[i].x, 30, `17.2 第 ${i + 1} 行标注 x 应偏移 +30`);
-    eq(moved[i].y - base[i].y, -20, `17.2 第 ${i + 1} 行标注 y 应偏移 -20`);
-  }
-
-  // 17.3 隐藏后一条都不剩
-  eq(compLabels({ ...mk(), labelHidden: true } as MosComp).length, 0, '17.3 labelHidden 时无标注');
-
-  // 17.4 偏移 + 隐藏叠加：隐藏优先
-  eq(
-    compLabels({ ...mk(), labelHidden: true, labelOff: { x: 50, y: 50 } } as MosComp).length,
-    0,
-    '17.4 隐藏优先于偏移',
-  );
-
-  // 17.5 偏移是**相对量**：元件移动后标注要跟着走，不能停在世界原地
-  const at0 = compLabels({ ...mk(), x: 0, y: 0 } as MosComp);
-  const at100 = compLabels({ ...mk(), x: 100, y: 100 } as MosComp);
-  const off = compLabels({ ...mk(), x: 100, y: 100, labelOff: { x: 30, y: -20 } } as MosComp);
-  eq(off[0].x - at100[0].x, 30, '17.5 偏移与元件位置相互独立');
-  eq(at100[0].x - at0[0].x, 100, '17.5 元件移动 100 → 标注同步移动 100');
-
-  // 17.6 标注只在边界被包含 —— 别把别的元件的标注也一起框进来
-  const doc = { ...emptyDoc('t'), components: [mk()] };
-  const p0 = compLabels(doc.components[0])[0];
-  eq(labelAt(doc, { x: p0.x + 2, y: p0.y }), doc.components[0].id, '17.6 标注左侧命中');
-  eq(labelAt(doc, { x: p0.x + 400, y: p0.y }), null, '17.6 远处不误命中');
-  eq(labelAt(doc, { x: p0.x, y: p0.y - 500 }), null, '17.6 上方不误命中');
-
-  // 17.7 隐藏标注后不应再被命中（否则能拖一个看不见的东西）
-  const hid = { ...emptyDoc('t'), components: [{ ...mk(), labelHidden: true } as MosComp] };
-  eq(labelAt(hid, { x: p0.x + 2, y: p0.y }), null, '17.7 隐藏的标注不应被命中');
-
-  // 17.8 moveLabels 相对当前偏移做增量，且只有目标元件被改
-  const d2 = { ...emptyDoc('t'), components: [mk(), makeComp(emptyDoc('t'), 'pmos', -100, 0)] };
-  const before = d2.components[0].labelOff ?? { x: 0, y: 0 };
-  const moved2 = moveLabels(d2, new Set([d2.components[0].id]), GRID, GRID);
-  eq(moved2.components[0].labelOff?.x, before.x + GRID, '17.8 moveLabels x 增量正确');
-  eq(moved2.components[0].labelOff?.y, before.y + GRID, '17.8 moveLabels y 增量正确');
-  eq(moved2.components[1].labelOff, undefined, '17.8 非目标元件不受影响');
-
-  // 17.9 零位移应原样返回（保持引用，便于上层跳过重渲染）
-  ok(moveLabels(d2, new Set([d2.components[0].id]), 0, 0) === d2, '17.9 零位移返回原对象');
-  ok(moveLabels(d2, new Set(), GRID, GRID) === d2, '17.9 空集合返回原对象');
-
-  // 17.10 归栅格：拖完停在半格上会让导出坐标出现小数
-  const d3 = { ...emptyDoc('t'), components: [mk()] };
-  const snapped = moveLabels(d3, new Set([d3.components[0].id]), GRID + 3, GRID + 7);
-  const offv = snapped.components[0].labelOff!;
-  eq(offv.x % GRID, 0, '17.10 标注偏移 x 落在栅格上');
-  eq(offv.y % GRID, 0, '17.10 标注偏移 y 落在栅格上');
-
-  // 17.11 标注隐藏/偏移必须能穿过 normalize（JSON 往返不能丢字段）
-  const rt = normalize({
-    ...emptyDoc('t'),
-    components: [{ ...mk(), labelOff: { x: 40, y: -60 }, labelHidden: true }],
-  });
-  eq(rt.components[0].labelOff?.x, 40, '17.11 normalize 保留 labelOff.x');
-  eq(rt.components[0].labelOff?.y, -60, '17.11 normalize 保留 labelOff.y');
-  eq(rt.components[0].labelHidden, true, '17.11 normalize 保留 labelHidden');
-
-  // 17.12 脏数据：labelOff 是字符串/null 时兜底成「默认位置」而不是崩
-  for (const bad of [null, undefined, 'x', 123, [], { x: 'a', y: null }]) {
-    const n = normalize({
-      ...emptyDoc('t'),
-      components: [{ ...mk(), labelOff: bad }],
-    });
-    const o = n.components[0].labelOff;
-    ok(
-      o === undefined || (Number.isFinite(o.x) && Number.isFinite(o.y)),
-      `17.12 脏 labelOff ${JSON.stringify(bad)} 应兜底为有限值`,
-    );
-  }
-
-  // 17.13 标注计入包围盒 —— 拖远的标注也要算进去，否则 fit 会把它切掉
-  const far = { ...emptyDoc('t'), components: [{ ...mk(), labelOff: { x: 600, y: 600 } } as MosComp] };
-  const bbFar = boundsOf(far);
-  const lblFar = compLabels(far.components[0])[0];
-  ok(bbFar.x + bbFar.w >= lblFar.x, '17.13 拖远的标注右缘应被包围盒包含');
-  ok(bbFar.y + bbFar.h >= lblFar.y, '17.13 拖远的标注下缘应被包围盒包含');
-}
 
 // ============================================================================
 // 18. 拖拽放置：ghost 预览与导出不互相污染
@@ -1230,25 +1135,86 @@ function estText(s: string, size: number): number {
   ok(!exported.includes('opacity="0.55"'), '18.2 导出模式不应包含 ghost');
   ok(!/<style/.test(exported) && !/class=/.test(exported), '18.2 带 ghost 参数导出仍自包含');
 
-  // 18.3 标注的拖拽命中框只在屏幕模式输出
-  const labeled = { ...doc, components: [{ ...doc.components[0], label: 'M1' }] };
-  const screenLbl = renderSvg(labeled, base);
-  ok(screenLbl.includes('mc-label-hit'), '18.3 屏幕模式输出标注命中框');
-  const exportLbl = renderSvg(labeled, { mode: 'export' });
-  ok(!exportLbl.includes('mc-label-hit'), '18.3 导出不输出标注命中框');
-  ok(exportLbl.includes('M1'), '18.3 标注文字本身仍要导出');
+  // 18.3 元件**不再自带标注** —— 实例名/W/L 只存在于属性面板，不进画布
+  const labeled = { ...doc, components: [{ ...doc.components[0], label: 'M1', w: '1u', l: '65n' }] };
+  ok(!renderSvg(labeled, base).includes('>M1<'), '18.3 屏幕模式不渲染实例名');
+  ok(!renderSvg(labeled, { mode: 'export' }).includes('>M1<'), '18.3 导出不包含实例名');
+  eq(compLabels(labeled.components[0]).length, 0, '18.3 compLabels 恒为空');
 
-  // 18.4 隐藏标注后屏幕与导出都不再出现该文字
-  const hidden = { ...doc, components: [{ ...doc.components[0], label: 'M1', labelHidden: true }] };
-  ok(!renderSvg(hidden, base).includes('>M1<'), '18.4 屏幕模式隐藏标注后不渲染文字');
-  ok(!renderSvg(hidden, { mode: 'export' }).includes('>M1<'), '18.4 导出模式隐藏标注后不含文字');
+  // 18.4 compLabels 对所有元件种类都为空 —— 不只是 MOS
+  for (const k of ['nmos', 'pmos', 'resistor', 'capacitor', 'diode', 'vdd', 'gnd', 'port', 'vsrc', 'isrc'] as const) {
+    const c = makeComp(emptyDoc('t'), k, 0, 0);
+    const withName = { ...c, label: 'X1', value: '10k', net: 'VDD' } as MosComp;
+    eq(compLabels(withName).length, 0, `18.4 ${k} 不应产生标注`);
+  }
 
-  // 18.5 拖走标注后，导出 SVG 里文字应出现在新位置
-  const shifted = { ...doc, components: [{ ...doc.components[0], label: 'M1', labelOff: { x: 200, y: 0 } }] };
-  const plain = renderSvg(doc, { mode: 'export' });
-  const movedSvg = renderSvg(shifted, { mode: 'export' });
-  ok(plain !== movedSvg, '18.5 标注偏移应改变导出内容');
-  ok(movedSvg.includes('M1'), '18.6 偏移后标注文字仍存在');
+  // 18.5 文本走texts 通道：元件不产标注，但文本元件照常渲染与导出
+  const withText: MosDoc = {
+    ...emptyDoc('t'),
+    texts: [{ id: 't1', x: 40, y: 60, text: 'M1', size: 12, align: 'left', color: 'ink', bold: false, rot: 0 }],
+  };
+  ok(renderSvg(withText, base).includes('>M1<'), '18.5 屏幕模式渲染文本元件');
+  ok(renderSvg(withText, { mode: 'export' }).includes('>M1<'), '18.5 文本元件导出保留');
+}
+
+// ============================================================================
+// 19. 拖动连线分段
+// ============================================================================
+
+{
+  const A = { x: 0, y: 0 };
+  const B = { x: 300, y: 200 };
+
+  // 19.1 索引越界时原样返回（不能把 via 弄坏）
+  const via0 = [{ x: 150, y: 0 }];
+  eq(dragSegment(A, B, via0, -1, { x: 0, y: 50 }), via0, '19.1 segIdx=-1 原样返回');
+  eq(dragSegment(A, B, via0, 99, { x: 0, y: 50 }), via0, '19.1 segIdx 越界原样返回');
+
+  // 19.2 横段只能上下平移：给左右增量应被忽略（否则拖成斜线）。
+  // 判据用「仍然正交」—— 平移后相邻段要补 Z 形，出现新的 x/y 都正常。
+  const h = dragSegment(A, B, [{ x: 150, y: 0 }], 0, { x: 40, y: 60 });
+  const hf = cleanPts([A, ...orthoFix(A, B, h), B]);
+  for (let k = 0; k < hf.length - 1; k++) {
+    const dx = Math.abs(hf[k + 1].x - hf[k].x);
+    const dy = Math.abs(hf[k + 1].y - hf[k].y);
+    ok(dx < 0.5 || dy < 0.5, `19.2 横段平移后第 ${k} 段应仍正交 | ${JSON.stringify(hf)}`);
+  }
+  // 平移后走线应与平移前不同（x 增量被忽略，但 y 增量必须生效）
+  const before = cleanPts([A, ...orthoFix(A, B, [{ x: 150, y: 0 }]), B]);
+  ok(JSON.stringify(hf) !== JSON.stringify(before), `19.2 拖段后走线应改变 | ${JSON.stringify(hf)}`);
+
+  // 19.3 **任何输入下每段都严格正交** —— 本节的核心不变量。
+  // segIdx 必须落在实际段数内（单 via 只有 2 段：0 和 1）。
+  // 越界时 dragSegment 原样返回，但**渲染路径 wirePts() 总会再跑一遍
+  // orthoFix**，所以不会出现斜线 —— 这也是这里断言经wirePts 的原因。
+  for (let i = 0; i < 200; i++) {
+    const via = [{ x: (i * 7) % 300, y: (i * 11) % 200 }];
+    const seg = i % 2;
+    const delta = { x: (i * 13) % 120 - 60, y: (i * 17) % 120 - 60 };
+    const out = dragSegment(A, B, via, seg, delta);
+    const full = cleanPts([A, ...orthoFix(A, B, out), B]);
+    for (let k = 0; k < full.length - 1; k++) {
+      const dx = Math.abs(full[k + 1].x - full[k].x);
+      const dy = Math.abs(full[k + 1].y - full[k].y);
+      ok(dx < 0.5 || dy < 0.5, `19.3 i=${i} 第 ${k} 段不垂直 | ${JSON.stringify(full)}`);
+    }
+  }
+
+  // 19.4 端点必须钉死在元件端口上 —— 平移的是段，不是端点
+  const out4 = dragSegment(A, B, [{ x: 150, y: 0 }], 0, { x: 0, y: 80 });
+  const full4 = cleanPts([A, ...out4, B]);
+  eq(full4[0], A, '19.4 首端点不应移动');
+  eq(full4[full4.length - 1], B, '19.4 末端点不应移动');
+
+  // 19.5 零增量应得到与原via 等价的走线
+  const via5 = [{ x: 150, y: 0 }];
+  const out5 = dragSegment(A, B, via5, 0, { x: 0, y: 0 });
+  ok(out5.length >= 1, '19.5 零增量仍应产生有效走线');
+
+  // 19.6 多 via 时只影响目标段附近，不应把整条线推倒
+  const via6 = [{ x: 100, y: 0 }, { x: 100, y: 200 }];
+  const out6 = dragSegment(A, B, via6, 0, { x: 0, y: 50 });
+  ok(out6.length >= 2, `19.6 多 via 拖段后应仍有多个拐点 | ${JSON.stringify(out6)}`);
 }
 
 // ============================================================================

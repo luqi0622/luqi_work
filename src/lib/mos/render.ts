@@ -25,6 +25,7 @@ import {
   type DiagResult,
   type MosComp,
   type MosDoc,
+  type PaletteKind,
   type Rect,
   type StrokeStyle,
   type TextNote,
@@ -133,10 +134,10 @@ export interface RenderOpts {
   /** 屏幕模式：框选矩形 */
   marquee?: Rect | null;
   /**
-   * 屏幕模式：从元件库拖出、跟随光标的待放置元件（半透明 ghost）。
+   * 屏幕模式：从元件库拖出、跟随光标的待放置项（半透明 ghost）。
    * 导出模式忽略 —— ghost 是交互反馈，不该进最终产物。
    */
-  placeGhost?: { kind: CompKind; x: number; y: number } | null;
+  placeGhost?: { kind: PaletteKind; x: number; y: number } | null;
   /** 导出模式的像素缩放（PNG 2× 时用） */
   pxScale?: number;
   /** 导出模式的背景色，null = 透明 */
@@ -216,29 +217,9 @@ function compSvg(
     );
   }
 
-  // 标注（组外，世界坐标，水平）
-  //
-  // 屏幕模式下给标注挂 class/data-* 和透明命中区，这样**可以直接拖动标注**。
-  // 命中区必需：<text> 的可点区域只覆盖字形墨迹，"M1" 这种短标注几乎点不中。
-  for (const lb of compLabels(c)) {
-    const attrs = screenMode
-      ? ` class="mc-label" data-comp="${esc(c.id)}" style="cursor:move"`
-      : '';
-    parts.push(
-      `<text${attrs} x="${n(lb.x)}" y="${n(lb.y)}" font-size="${n(lb.size)}" fill="${lb.color === 'muted' ? s.muted : s.ink}" font-weight="${lb.bold ? 600 : 400}" text-anchor="${lb.align}" font-family="ui-sans-serif, system-ui, sans-serif">${esc(lb.text)}</text>`,
-    );
-    if (screenMode) {
-      // 命中框比文字略大一圈（上下各留半个字号），细标注也好点
-      const tw = estimateTextWidth(lb.text, lb.size) + 6;
-      parts.push(
-        `<rect class="mc-label-hit" data-comp="${esc(c.id)}" x="${n(lb.x - 3)}" y="${n(lb.y - lb.size)}" width="${n(tw)}" height="${n(lb.size * 1.35)}" fill="transparent" pointer-events="all"/>`,
-      );
-    }
-  }
-
   // 悬空端口红圈（导出也保留：这是有价值的自检信息）
   if (floating) {
-    for (const name of portNames(c.kind, isMos(c) ? c.bodyTied : false)) {
+    for (const name of portNames(c.kind)) {
       if (!s.floatingKeys.has(`${c.id}#${name}`)) continue;
       const p = portWorld(c, name);
       parts.push(
@@ -352,7 +333,7 @@ export function renderSvg(doc: MosDoc, opts: RenderOpts): string {
 
     // 端口命中点：透明圆，方便点选连线起点
     if (!exportMode) {
-      for (const name of portNames(c.kind, isMos(c) ? c.bodyTied : false)) {
+      for (const name of portNames(c.kind)) {
         const p = portWorld(c, name);
         parts.push(
           `<circle class="mc-port" data-comp="${esc(c.id)}" data-port="${esc(name)}" cx="${n(p.x)}" cy="${n(p.y)}" r="7" fill="transparent" pointer-events="all"/>`,
@@ -392,14 +373,20 @@ export function renderSvg(doc: MosDoc, opts: RenderOpts): string {
       // 用真实符号几何画 ghost，而不是缩略图：缩略图不带端口，
       // 用户判断「落点会不会压到现有连线」时需要看到端口位置。
       const g = opts.placeGhost;
-      const fake = { kind: g.kind, x: g.x, y: g.y, rot: 0, flip: false, label: '', color: null } as unknown as MosComp;
-      const gb = compBBox(fake);
-      parts.push(
-        `<g opacity="0.55" pointer-events="none">${compSvg(fake, segStyle, false, false, false)}</g>`,
-      );
-      parts.push(
-        `<rect x="${n(gb.x)}" y="${n(gb.y)}" width="${n(gb.w)}" height="${n(gb.h)}" fill="none" stroke="${cGuide}" stroke-width="1.5" stroke-dasharray="5 4" pointer-events="none"/>`,
-      );
+      if (g.kind === 'note') {
+        parts.push(
+          `<text x="${n(g.x)}" y="${n(g.y)}" font-size="13" fill="${cGuide}" font-family="ui-sans-serif, system-ui, sans-serif" opacity="0.75" pointer-events="none">文本</text>`,
+        );
+      } else {
+        const fake = { kind: g.kind, x: g.x, y: g.y, rot: 0, flip: false, label: '', color: null } as unknown as MosComp;
+        const gb = compBBox(fake);
+        parts.push(
+          `<g opacity="0.55" pointer-events="none">${compSvg(fake, segStyle, false, false, false)}</g>`,
+        );
+        parts.push(
+          `<rect x="${n(gb.x)}" y="${n(gb.y)}" width="${n(gb.w)}" height="${n(gb.h)}" fill="none" stroke="${cGuide}" stroke-width="1.5" stroke-dasharray="5 4" pointer-events="none"/>`,
+        );
+      }
     }
   }
 
@@ -556,9 +543,15 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 /** 单个符号的独立小 SVG，供符号面板预览 */
 export function symbolThumb(kind: string, dark: boolean): string {
   const c = dark ? DARK_COLORS.ink : LIGHT_COLORS.ink;
+
+  // 文本不是元件，没有符号 path —— 画一个「T字 + 下划线」的排版字形占位，
+  // 和真正的文本元素一眼能对上
+  if (kind === 'note') {
+    const d = 'M-9 -8L9 -8M0 -8L0 9M-9 9L9 9';
+    return `<svg class="mc-thumb" viewBox="-16 -14 32 30" width="34" height="34" xmlns="http://www.w3.org/2000/svg"><path d="${d}" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"/></svg>`;
+  }
+
   const fake = { kind, x: 0, y: 0, rot: 0, flip: false, label: '', color: null } as unknown as MosComp;
-  if (kind === 'nmos') (fake as { bodyTied: boolean }).bodyTied = false;
-  if (kind === 'pmos') (fake as { bodyTied: boolean }).bodyTied = false;
   const segs = compSegs(fake);
   const b = compBBox(fake);
   const pad = 6;

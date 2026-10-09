@@ -281,6 +281,37 @@ export function dragVertex(
   return orthoFix(a, b, mids);
 }
 
+/**
+ * 拖动**某一段线**，让整段平移。
+ *
+ * 与 `dragVertex`（拖拐点）的区别：那个移动一个顶点，这个移动一段 —— 拖
+ * 中间那段竖线时希望整段竖着平移，而不是把某个拐点拽歪。
+ *
+ * 实现上把该段两端点**一起**平移，再交给 `orthoFix` 补正相邻段的正交性。
+ * 段是横的就不动 y（横线只能上下平移），是竖的反之 —— 不然拖一下就变成
+ * 斜线，再被 orthoFix 折成 Z 形，视觉上完全不是用户想要的「整段挪动」。
+ *
+ * 端点（首尾）不参与平移：它们钉在元件端口上。
+ */
+export function dragSegment(a: Pt, b: Pt, via: Pt[], segIdx: number, delta: Pt): Pt[] {
+  const mids = via.map((p) => ({ x: p.x, y: p.y }));
+  const full = cleanPts([a, ...mids, b]);
+  // full 的下标 0 与末位是端点，1..n-2 才是 via
+  const i0 = segIdx + 1;
+  const i1 = segIdx + 2;
+  // 下标越界 = 这一段不存在（或已被 cleanPts 合并掉），当作没拖动
+  if (i0 < 1 || i1 >= full.length) return mids;
+
+  const p0 = full[i0];
+  const p1 = full[i1];
+  const horizontal = Math.abs(p1.y - p0.y) < EPS;
+  const d = horizontal ? { x: 0, y: delta.y } : { x: delta.x, y: 0 };
+
+  const moved = full.map((p, i) => (i === i0 || i === i1 ? { x: p.x + d.x, y: p.y + d.y } : p));
+  // 平移后相邻两段多半不再正交，交给 orthoFix 补成 Z 形
+  return orthoFix(a, b, cleanPts(moved).slice(1, -1));
+}
+
 /** 落栅格。避免导出 SVG 出现 17.999999 这种浮点尾巴 */
 export function snapToGrid(x: number, y: number): Pt {
   return { x: Math.round(x / GRID) * GRID, y: Math.round(y / GRID) * GRID };
@@ -388,7 +419,7 @@ export function nearestPort(doc: MosDoc, p: Pt, tol = SNAP_PORT): PortHit | null
   let best: PortHit | null = null;
   let bestD = tol;
   for (const c of doc.components) {
-    for (const name of portNames(c.kind, isMos(c) ? c.bodyTied : false)) {
+    for (const name of portNames(c.kind)) {
       const pos = portWorld(c, name);
       const d = Math.hypot(pos.x - p.x, pos.y - p.y);
       if (d < bestD) {
@@ -443,25 +474,6 @@ export function wireAt(doc: MosDoc, p: Pt, tol = 6): Wire | null {
     const pts = wirePts(doc, doc.wires[i]);
     for (let k = 0; k < pts.length - 1; k++) {
       if (distToSeg(p, pts[k], pts[k + 1]) <= tol) return doc.wires[i];
-    }
-  }
-  return null;
-}
-
-/**
- * 命中某个元件的**标注**，返回该元件 id。
- *
- * 倒序遍历（后画的在上）。容差比 textAt 稍大：标注字号小，
- * 又是细笔画，没有额外余量的话很难点中。
- */
-export function labelAt(doc: MosDoc, p: Pt, pad = 3): string | null {
-  for (let i = doc.components.length - 1; i >= 0; i--) {
-    const c = doc.components[i];
-    for (const lb of compLabels(c)) {
-      const b = textBBox(lb.x, lb.y, lb.text, lb.size, lb.align);
-      if (p.x >= b.x - pad && p.x <= b.x + b.w + pad && p.y >= b.y - pad && p.y <= b.y + b.h + pad) {
-        return c.id;
-      }
     }
   }
   return null;
