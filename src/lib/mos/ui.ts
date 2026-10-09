@@ -98,7 +98,7 @@ import * as persist from './persist';
 // 交互状态
 // ============================================================================
 
-type DragKind = 'none' | 'pan' | 'comp' | 'wire' | 'bend' | 'marquee | 'text' | 'label' | 'place';
+type DragKind = 'none' | 'pan' | 'comp' | 'wire' | 'bend' | 'marquee' | 'text' | 'label' | 'place';
 
 interface DragBase {
   startWorld: Pt;
