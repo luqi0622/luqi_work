@@ -1,0 +1,599 @@
+---
+/**
+ * MOS 管级电路图编辑器
+ *
+ * 纯前端工具：摆 N/P 管 → 正交走线连线 → 改参数标注 → 导出 SVG 直接插进论文
+ *
+ * 架构：符号几何 / 正交布线 / 状态与撤销 / 渲染 全在 src/lib/mos/ 的纯函数层，
+ * 可用 esbuild bundle 后交给 node 跑断言测试；页面装配在 ui.ts 的 MosEditor 类。
+ */
+import BaseLayout from '@/layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="MOS 管级电路图"
+  description="画晶体管级电路原理图的在线小工具：N 管 / P 管（含三端体短接）、电阻电容二极管、电源与信号引出，曼哈顿直角走线，栅极列自动对齐，标注 W/L/Vt，导出自包含 SVG 直接插进 Word 和 PowerPoint。内置 CMOS 反相器、差分对、电流镜、共源放大器等预设。"
+  wide
+  flush
+  bare
+>
+  <div id="mos-root" class="mc-host"></div>
+
+  <noscript>
+    <p style="padding:2rem;text-align:center">这个工具需要 JavaScript 才能运行。</p>
+  </noscript>
+</BaseLayout>
+
+<script>
+  import { MosEditor } from '@/lib/mos/ui';
+  const root = document.getElementById('mos-root');
+  if (root) {
+    try {
+      new MosEditor(root);
+    } catch (err) {
+      // 骨架校验失败要让人看得见，不要白屏
+      root.innerHTML =
+        '<div style="padding:2rem;font-family:system-ui;color:#a32d2d">' +
+        '<h1 style="font-size:1.1rem;margin:0 0 .5rem">编辑器初始化失败</h1>' +
+        '<pre style="white-space:pre-wrap;font-size:.8rem">' +
+        String((err as Error).message).replace(/&/g, '&amp;').replace(/</g, '&lt;') +
+        '</pre></div>';
+      throw err;
+    }
+  }
+</script>
+
+<style is:global>
+  /*
+   * 布局纪律（都实际踩过）：
+   * 1. 高度链每一环都要显式高度，否则 getBoundingClientRect 全读到 0，
+   *    fit-to-view 会把缩放算成极小值，看起来像「缩放坏了」
+   * 2. grid 直接子元素必须都带 min-width:0，否则属性面板的宽内容把整栏撑爆，
+   *    移动端 documentElement.scrollWidth 会从 360 变成 1903
+   * 3. 动态创建的节点用 <style is:global>，Astro scoped style 打不中它们
+   * 4. viewport 要 touch-action:none，否则移动端手势会接管拖拽
+   */
+
+  .mc-host {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--mc-bg);
+    color: var(--mc-ink);
+  }
+
+  .mc-root {
+    /* 亮色 */
+    --mc-bg: #fafafa;
+    --mc-panel: #ffffff;
+    --mc-sunken: #f4f4f5;
+    --mc-ink: #18181b;
+    --mc-muted: #71717a;
+    --mc-faint: #a1a1aa;
+    --mc-line: #e4e4e7;
+    --mc-line-2: #d4d4d8;
+    --mc-select: #2563eb;
+    --mc-danger: #c0362c;
+    --mc-guide: #0891b2;
+    --mc-accent: #185fa5;
+    --mc-accent-soft: #e6f1fb;
+
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-size: 13px;
+    background: var(--mc-bg);
+    color: var(--mc-ink);
+  }
+
+  .dark .mc-root {
+    --mc-bg: #18181b;
+    --mc-panel: #1f1f23;
+    --mc-sunken: #101013;
+    --mc-ink: #e4e4e7;
+    --mc-muted: #a1a1aa;
+    --mc-faint: #71717a;
+    --mc-line: #2e2e33;
+    --mc-line-2: #3f3f46;
+    --mc-select: #60a5fa;
+    --mc-danger: #f87171;
+    --mc-guide: #22d3ee;
+    --mc-accent: #7cc0f0;
+    --mc-accent-soft: #173042;
+  }
+
+  .mc-root *,
+  .mc-root *::before,
+  .mc-root *::after {
+    box-sizing: border-box;
+  }
+
+  /* ---------------- 顶栏 ---------------- */
+
+  .mc-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--mc-panel);
+    border-bottom: 1px solid var(--mc-line);
+    flex: none;
+    min-height: 44px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .mc-back {
+    font-size: 12px;
+    color: var(--mc-muted);
+    text-decoration: none;
+    padding: 4px 8px;
+    border-radius: 6px;
+    white-space: nowrap;
+    flex: none;
+  }
+  .mc-back:hover {
+    background: var(--mc-sunken);
+    color: var(--mc-ink);
+  }
+
+  .mc-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--mc-ink);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 4px 8px;
+    min-width: 90px;
+    max-width: 200px;
+    flex: 0 1 auto;
+  }
+  .mc-title:hover {
+    border-color: var(--mc-line-2);
+  }
+  .mc-title:focus {
+    outline: none;
+    border-color: var(--mc-select);
+    background: var(--mc-panel);
+  }
+
+  .mc-top-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    flex: none;
+  }
+
+  .mc-btn {
+    font-size: 12px;
+    color: var(--mc-ink);
+    background: var(--mc-panel);
+    border: 1px solid var(--mc-line-2);
+    border-radius: 6px;
+    padding: 4px 9px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .mc-btn:hover {
+    background: var(--mc-sunken);
+    border-color: var(--mc-faint);
+  }
+  .mc-btn:active {
+    transform: translateY(1px);
+  }
+  .mc-btn-pri {
+    border-color: var(--mc-accent);
+    color: var(--mc-accent);
+  }
+  .mc-btn-pri:hover {
+    background: var(--mc-accent-soft);
+  }
+
+  .mc-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--mc-line-2);
+    margin: 0 3px;
+    flex: none;
+  }
+
+  /* ---------------- 三栏 ---------------- */
+
+  .mc-grid {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 208px minmax(0, 1fr) 264px;
+  }
+
+  /* 每一栏都要 min-width:0，否则里面的宽内容会把整栏撑爆 */
+  .mc-grid > * {
+    min-width: 0;
+  }
+
+  .mc-left,
+  .mc-right {
+    background: var(--mc-panel);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+  .mc-left {
+    border-right: 1px solid var(--mc-line);
+    padding: 8px;
+  }
+  .mc-right {
+    border-left: 1px solid var(--mc-line);
+    padding: 8px;
+  }
+
+  .mc-center {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    position: relative;
+  }
+
+  /* ---------------- 元件库 ---------------- */
+
+  .mc-sec-t {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--mc-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 10px 0 5px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .mc-sec-t:first-child {
+    margin-top: 0;
+  }
+  .mc-hint {
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--mc-faint);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  .mc-chips {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+  }
+
+  .mc-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: 5px 2px 3px;
+    background: var(--mc-panel);
+    border: 1px solid var(--mc-line);
+    border-radius: 7px;
+    cursor: pointer;
+    color: var(--mc-ink);
+  }
+  .mc-chip:hover {
+    border-color: var(--mc-accent);
+    background: var(--mc-accent-soft);
+  }
+  .mc-chip-ico {
+    display: block;
+    line-height: 0;
+    color: var(--mc-ink);
+  }
+  .mc-chip-tx {
+    font-size: 10px;
+    color: var(--mc-muted);
+    white-space: nowrap;
+  }
+
+  .mc-aligns {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 3px;
+  }
+  .mc-abtn {
+    font-size: 11px;
+    padding: 4px 2px;
+    background: var(--mc-panel);
+    border: 1px solid var(--mc-line);
+    border-radius: 6px;
+    color: var(--mc-ink);
+    cursor: pointer;
+  }
+  .mc-abtn:hover {
+    border-color: var(--mc-accent);
+    background: var(--mc-accent-soft);
+  }
+
+  .mc-presets {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .mc-pbtn {
+    font-size: 12px;
+    text-align: left;
+    padding: 6px 8px;
+    background: var(--mc-panel);
+    border: 1px solid var(--mc-line);
+    border-radius: 6px;
+    color: var(--mc-ink);
+    cursor: pointer;
+  }
+  .mc-pbtn:hover {
+    border-color: var(--mc-accent);
+    background: var(--mc-accent-soft);
+  }
+
+  .mc-keys {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px 8px;
+    margin: 0;
+    font-size: 10.5px;
+  }
+  .mc-keys dt {
+    color: var(--mc-muted);
+    font-family: ui-monospace, monospace;
+    white-space: nowrap;
+  }
+  .mc-keys dd {
+    margin: 0;
+    color: var(--mc-faint);
+  }
+
+  /* ---------------- 画布 ---------------- */
+
+  .mc-viewport {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+    background-color: var(--mc-bg);
+    /* 移动端手势会抢走拖拽，必须显式关掉 */
+    touch-action: none;
+    outline: none;
+  }
+  .mc-space .mc-viewport {
+    cursor: grab;
+  }
+
+  .mc-svgwrap {
+    position: absolute;
+    inset: 0;
+    /* 容器本身不吃事件，这样「点到空白处」能落到 viewport 上触发框选。
+       但 SVG 内部的可交互元素必须逐个把 pointer-events 打开 ——
+       `pointer-events: none` 是继承的，只在 svg 元素上写 auto 不够，
+       子元素仍继承着 none，于是点元件毫无反应（连线和选中全失效）。 */
+    pointer-events: none;
+  }
+
+  /* SVG 里所有会被点到的东西都要显式恢复事件 */
+  .mc-svgwrap svg {
+    display: block;
+    user-select: none;
+  }
+  .mc-svgwrap svg .mc-comp,
+  .mc-svgwrap svg .mc-comp-hit,
+  .mc-svgwrap svg .mc-wire,
+  .mc-svgwrap svg .mc-wire-hit,
+  .mc-svgwrap svg .mc-port,
+  .mc-svgwrap svg .mc-bend,
+  .mc-svgwrap svg .mc-text {
+    pointer-events: auto;
+  }
+
+  .mc-port {
+    cursor: crosshair;
+  }
+  .mc-bend {
+    cursor: move;
+  }
+
+  .mc-status {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    color: var(--mc-muted);
+    background: var(--mc-panel);
+    border-top: 1px solid var(--mc-line);
+    min-height: 26px;
+    white-space: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .mc-status::-webkit-scrollbar {
+    display: none;
+  }
+  .mc-status-warn {
+    color: var(--mc-danger);
+  }
+
+  /* ---------------- 属性面板 ---------------- */
+
+  .mc-form,
+  .mc-diag {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .mc-form-t {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--mc-ink);
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+  }
+
+  .mc-f {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .mc-f > span {
+    font-size: 10.5px;
+    color: var(--mc-muted);
+  }
+  .mc-f input,
+  .mc-f select {
+    font-size: 12px;
+    color: var(--mc-ink);
+    background: var(--mc-panel);
+    border: 1px solid var(--mc-line-2);
+    border-radius: 5px;
+    padding: 4px 6px;
+    width: 100%;
+  }
+  .mc-f input:focus,
+  .mc-f select:focus {
+    outline: none;
+    border-color: var(--mc-select);
+  }
+
+  .mc-f2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .mc-chk {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--mc-ink);
+    cursor: pointer;
+  }
+
+  .mc-ports {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .mc-ports li {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 10.5px;
+    color: var(--mc-muted);
+  }
+  .mc-ports code {
+    font-family: ui-monospace, monospace;
+    color: var(--mc-ink);
+    background: var(--mc-sunken);
+    border-radius: 3px;
+    padding: 0 4px;
+    min-width: 16px;
+    text-align: center;
+  }
+  .mc-ports em {
+    font-style: normal;
+    color: var(--mc-danger);
+    margin-left: auto;
+  }
+  .mc-portf code {
+    background: var(--mc-danger);
+    color: #fff;
+  }
+
+  .mc-dlist {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .mc-dlist code {
+    font-family: ui-monospace, monospace;
+    font-size: 10px;
+    color: var(--mc-danger);
+  }
+
+  .mc-empty {
+    font-size: 12px;
+    color: var(--mc-muted);
+    padding: 16px 4px;
+    text-align: center;
+  }
+
+  .mc-sub {
+    font-size: 10.5px;
+    color: var(--mc-faint);
+    line-height: 1.5;
+  }
+
+  /* ---------------- 移动端：三栏折叠为抽屉 ---------------- */
+
+  @media (max-width: 860px) {
+    .mc-grid {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
+    }
+
+    .mc-left,
+    .mc-right {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: min(280px, 84vw);
+      z-index: 20;
+      box-shadow: 0 0 24px rgb(0 0 0 / 0.18);
+      transition: transform 0.18s ease;
+    }
+    .mc-left {
+      left: 0;
+      transform: translateX(-100%);
+    }
+    .mc-right {
+      right: 0;
+      transform: translateX(100%);
+    }
+    .mc-left.is-open,
+    .mc-right.is-open {
+      transform: translateX(0);
+    }
+
+    .mc-back {
+      display: none;
+    }
+    .mc-title {
+      max-width: 130px;
+    }
+  }
+
+  @media (min-width: 861px) {
+    .mc-drawer-btn {
+      display: none;
+    }
+  }
+
+  .mc-drawer-btn {
+    font-size: 12px;
+    padding: 4px 8px;
+    border: 1px solid var(--mc-line-2);
+    border-radius: 6px;
+    background: var(--mc-panel);
+    color: var(--mc-ink);
+    cursor: pointer;
+    flex: none;
+  }
+</style>
