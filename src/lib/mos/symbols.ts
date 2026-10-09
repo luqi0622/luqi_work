@@ -567,13 +567,27 @@ export interface LabelItem {
  *
  * 位置用局部 bbox 算完再变换，所以旋转/镜像时标注会跟着元件走，
  * 但**始终保持水平**（这是文本不旋转的正确实现方式）。
+ *
+ * `labelOff` / `labelHidden` 在这里收口：渲染、包围盒、导出三条路径
+ * 都调用本函数，所以「拖走标注」和「隐藏标注」只要改这两个字段，
+ * 不需要各自再实现一遍偏移逻辑。
  */
 export function compLabels(c: MosComp): LabelItem[] {
+  if (c.labelHidden) return [];
   const bb = compBBox(c);
+  const off = c.labelOff ?? { x: 0, y: 0 };
   const out: LabelItem[] = [];
   const push = (text: string, size: number, color: ColorToken, bold: boolean) => {
     if (!text) return;
-    out.push({ x: bb.x + bb.w + 9, y: bb.y + bb.h / 2 + size * 0.35, text, size, align: 'left', color, bold });
+    out.push({
+      x: bb.x + bb.w + 9 + off.x,
+      y: bb.y + bb.h / 2 + size * 0.35 + off.y,
+      text,
+      size,
+      align: 'left',
+      color,
+      bold,
+    });
   };
 
   if (isMos(c)) {
@@ -584,8 +598,8 @@ export function compLabels(c: MosComp): LabelItem[] {
       const line2 = `${c.model ?? ''}${sub ? ` ${sub}` : ''}${vth}`.trim();
       if (line2) {
         out.push({
-          x: bb.x + bb.w + 9,
-          y: bb.y + bb.h / 2 + 13 * 0.35 + 15,
+          x: bb.x + bb.w + 9 + off.x,
+          y: bb.y + bb.h / 2 + 13 * 0.35 + 15 + off.y,
           text: line2,
           size: 11,
           align: 'left',

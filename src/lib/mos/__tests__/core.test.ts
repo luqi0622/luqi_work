@@ -21,6 +21,7 @@ import {
 } from '../types';
 import {
   compBBox,
+  compLabels,
   compSegs,
   localToWorld,
   portDirWorld,
@@ -33,6 +34,7 @@ import {
   cleanPts,
   dragVertex,
   ensureMinSize,
+  labelAt,
   orthoFix,
   orthoRoute,
   screenToWorld,
@@ -53,6 +55,7 @@ import {
   emptyHistory,
   makeComp,
   makeWire,
+  moveLabels,
   normalize,
   pushHistory,
   redo,
@@ -1113,6 +1116,139 @@ function estText(s: string, size: number): number {
   const blank = blankPreset();
   eq(blank.components.length, 0, '16.12 空图预设无元件');
   eq(blank.wires.length, 0, '16.12 空图预设无线');
+}
+
+// ============================================================================
+// 17. 标注：可拖动（labelOff）、可隐藏（labelHidden）
+// ============================================================================
+
+{
+  // 带 W/L，好让下面断言覆盖**多行**标注（偏移必须整体作用于所有行）
+  const mk = () => ({ ...makeComp(emptyDoc('t'), 'nmos', 100, 100), w: '1u', l: '65n' } as MosComp);
+  const base = compLabels(mk());
+  eq(base.length, 2, '17.1 NMOS 有实例名 + W/L 两行标注');
+
+  // 17.2 偏移应整体作用在**所有**标注行上，而不是只挪第一行
+  const moved = compLabels({ ...mk(), labelOff: { x: 30, y: -20 } } as MosComp);
+  eq(moved.length, base.length, '17.2 偏移不改变标注行数');
+  for (let i = 0; i < base.length; i++) {
+    eq(moved[i].x - base[i].x, 30, `17.2 第 ${i + 1} 行标注 x 应偏移 +30`);
+    eq(moved[i].y - base[i].y, -20, `17.2 第 ${i + 1} 行标注 y 应偏移 -20`);
+  }
+
+  // 17.3 隐藏后一条都不剩
+  eq(compLabels({ ...mk(), labelHidden: true } as MosComp).length, 0, '17.3 labelHidden 时无标注');
+
+  // 17.4 偏移 + 隐藏叠加：隐藏优先
+  eq(
+    compLabels({ ...mk(), labelHidden: true, labelOff: { x: 50, y: 50 } } as MosComp).length,
+    0,
+    '17.4 隐藏优先于偏移',
+  );
+
+  // 17.5 偏移是**相对量**：元件移动后标注要跟着走，不能停在世界原地
+  const at0 = compLabels({ ...mk(), x: 0, y: 0 } as MosComp);
+  const at100 = compLabels({ ...mk(), x: 100, y: 100 } as MosComp);
+  const off = compLabels({ ...mk(), x: 100, y: 100, labelOff: { x: 30, y: -20 } } as MosComp);
+  eq(off[0].x - at100[0].x, 30, '17.5 偏移与元件位置相互独立');
+  eq(at100[0].x - at0[0].x, 100, '17.5 元件移动 100 → 标注同步移动 100');
+
+  // 17.6 标注只在边界被包含 —— 别把别的元件的标注也一起框进来
+  const doc = { ...emptyDoc('t'), components: [mk()] };
+  const p0 = compLabels(doc.components[0])[0];
+  eq(labelAt(doc, { x: p0.x + 2, y: p0.y }), doc.components[0].id, '17.6 标注左侧命中');
+  eq(labelAt(doc, { x: p0.x + 400, y: p0.y }), null, '17.6 远处不误命中');
+  eq(labelAt(doc, { x: p0.x, y: p0.y - 500 }), null, '17.6 上方不误命中');
+
+  // 17.7 隐藏标注后不应再被命中（否则能拖一个看不见的东西）
+  const hid = { ...emptyDoc('t'), components: [{ ...mk(), labelHidden: true } as MosComp] };
+  eq(labelAt(hid, { x: p0.x + 2, y: p0.y }), null, '17.7 隐藏的标注不应被命中');
+
+  // 17.8 moveLabels 相对当前偏移做增量，且只有目标元件被改
+  const d2 = { ...emptyDoc('t'), components: [mk(), makeComp(emptyDoc('t'), 'pmos', -100, 0)] };
+  const before = d2.components[0].labelOff ?? { x: 0, y: 0 };
+  const moved2 = moveLabels(d2, new Set([d2.components[0].id]), GRID, GRID);
+  eq(moved2.components[0].labelOff?.x, before.x + GRID, '17.8 moveLabels x 增量正确');
+  eq(moved2.components[0].labelOff?.y, before.y + GRID, '17.8 moveLabels y 增量正确');
+  eq(moved2.components[1].labelOff, undefined, '17.8 非目标元件不受影响');
+
+  // 17.9 零位移应原样返回（保持引用，便于上层跳过重渲染）
+  ok(moveLabels(d2, new Set([d2.components[0].id]), 0, 0) === d2, '17.9 零位移返回原对象');
+  ok(moveLabels(d2, new Set(), GRID, GRID) === d2, '17.9 空集合返回原对象');
+
+  // 17.10 归栅格：拖完停在半格上会让导出坐标出现小数
+  const d3 = { ...emptyDoc('t'), components: [mk()] };
+  const snapped = moveLabels(d3, new Set([d3.components[0].id]), GRID + 3, GRID + 7);
+  const offv = snapped.components[0].labelOff!;
+  eq(offv.x % GRID, 0, '17.10 标注偏移 x 落在栅格上');
+  eq(offv.y % GRID, 0, '17.10 标注偏移 y 落在栅格上');
+
+  // 17.11 标注隐藏/偏移必须能穿过 normalize（JSON 往返不能丢字段）
+  const rt = normalize({
+    ...emptyDoc('t'),
+    components: [{ ...mk(), labelOff: { x: 40, y: -60 }, labelHidden: true }],
+  });
+  eq(rt.components[0].labelOff?.x, 40, '17.11 normalize 保留 labelOff.x');
+  eq(rt.components[0].labelOff?.y, -60, '17.11 normalize 保留 labelOff.y');
+  eq(rt.components[0].labelHidden, true, '17.11 normalize 保留 labelHidden');
+
+  // 17.12 脏数据：labelOff 是字符串/null 时兜底成「默认位置」而不是崩
+  for (const bad of [null, undefined, 'x', 123, [], { x: 'a', y: null }]) {
+    const n = normalize({
+      ...emptyDoc('t'),
+      components: [{ ...mk(), labelOff: bad }],
+    });
+    const o = n.components[0].labelOff;
+    ok(
+      o === undefined || (Number.isFinite(o.x) && Number.isFinite(o.y)),
+      `17.12 脏 labelOff ${JSON.stringify(bad)} 应兜底为有限值`,
+    );
+  }
+
+  // 17.13 标注计入包围盒 —— 拖远的标注也要算进去，否则 fit 会把它切掉
+  const far = { ...emptyDoc('t'), components: [{ ...mk(), labelOff: { x: 600, y: 600 } } as MosComp] };
+  const bbFar = boundsOf(far);
+  const lblFar = compLabels(far.components[0])[0];
+  ok(bbFar.x + bbFar.w >= lblFar.x, '17.13 拖远的标注右缘应被包围盒包含');
+  ok(bbFar.y + bbFar.h >= lblFar.y, '17.13 拖远的标注下缘应被包围盒包含');
+}
+
+// ============================================================================
+// 18. 拖拽放置：ghost 预览与导出不互相污染
+// ============================================================================
+
+{
+  const doc: MosDoc = { ...emptyDoc('t'), components: [makeComp(emptyDoc('t'), 'nmos', 0, 0)] };
+  const base = { mode: 'screen' as const, view: { zoom: 1, panX: 0, panY: 0 }, vw: 800, vh: 600 };
+
+  // 18.1 ghost 出现在屏幕模式
+  const withGhost = renderSvg(doc, { ...base, placeGhost: { kind: 'pmos', x: 120, y: 80 } });
+  ok(withGhost.includes('opacity="0.55"'), '18.1 屏幕模式应画出拖拽 ghost');
+
+  // 18.2 **导出不得含 ghost** —— 它是交互反馈，进导出就是脏东西
+  const exported = renderSvg(doc, { mode: 'export', placeGhost: { kind: 'pmos', x: 120, y: 80 } });
+  ok(!exported.includes('opacity="0.55"'), '18.2 导出模式不应包含 ghost');
+  ok(!/<style/.test(exported) && !/class=/.test(exported), '18.2 带 ghost 参数导出仍自包含');
+
+  // 18.3 标注的拖拽命中框只在屏幕模式输出
+  const labeled = { ...doc, components: [{ ...doc.components[0], label: 'M1' }] };
+  const screenLbl = renderSvg(labeled, base);
+  ok(screenLbl.includes('mc-label-hit'), '18.3 屏幕模式输出标注命中框');
+  const exportLbl = renderSvg(labeled, { mode: 'export' });
+  ok(!exportLbl.includes('mc-label-hit'), '18.3 导出不输出标注命中框');
+  ok(exportLbl.includes('M1'), '18.3 标注文字本身仍要导出');
+
+  // 18.4 隐藏标注后屏幕与导出都不再出现该文字
+  const hidden = { ...doc, components: [{ ...doc.components[0], label: 'M1', labelHidden: true }] };
+  ok(!renderSvg(hidden, base).includes('>M1<'), '18.4 屏幕模式隐藏标注后不渲染文字');
+  ok(!renderSvg(hidden, { mode: 'export' }).includes('>M1<'), '18.4 导出模式隐藏标注后不含文字');
+
+  // 18.5 拖走标注后，导出 SVG 里文字应出现在新位置
+  const shifted = { ...doc, components: [{ ...doc.components[0], label: 'M1', labelOff: { x: 200, y: 0 } }] };
+  const plain = renderSvg(doc, { mode: 'export' });
+  const movedSvg = renderSvg(shifted, { mode: 'export' });
+  ok(plain !== movedSvg, '18.5 标注偏移应改变导出内容');
+  ok(movedSvg.includes('M1'), '18.6 偏移后标注文字仍存在');
 }
 
 // ============================================================================

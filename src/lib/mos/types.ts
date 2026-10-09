@@ -122,6 +122,16 @@ interface CompBase {
   label: string;
   /** 引线颜色，null= 用全局默认 */
   color: ColorToken | null;
+  /**
+   * 标注相对「紧贴 bbox 右侧」默认位置的偏移，世界坐标。
+   *
+   * 为什么存偏移而不是绝对坐标：标注默认位置由 bbox 推导，而 bbox 会随
+   * 旋转/镜像变化。存偏移才能让标注既能被拖走、又保留「元件移动/旋转时
+   * 标注自动跟随」的性质。
+   */
+  labelOff?: Pt;
+  /** true = 不显示该元件的标注（M1 这种实例名可以只留在属性面板里） */
+  labelHidden?: boolean;
 }
 
 /** MOS 晶体管。四端（body 独立）或三端（体短接到源） */

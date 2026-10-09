@@ -388,8 +388,20 @@ import BaseLayout from '@/layouts/BaseLayout.astro';
   .mc-svgwrap svg .mc-wire-hit,
   .mc-svgwrap svg .mc-port,
   .mc-svgwrap svg .mc-bend,
-  .mc-svgwrap svg .mc-text {
+  .mc-svgwrap svg .mc-text,
+  /* 标注本体 + 它的透明命中框：少了这两条，标注就点不动、拖不了 */
+  .mc-svgwrap svg .mc-label,
+  .mc-svgwrap svg .mc-label-hit {
     pointer-events: auto;
+  }
+
+  /* 元件库 chip：拖到画布放置。cursor 已在 .mc-chip 里给 pointer，
+     这里补 touch-action —— 移动端否则会被浏览器当成滚动手势，拖不动。 */
+  .mc-chip {
+    touch-action: none;
+  }
+  .mc-chip:active {
+    cursor: grabbing;
   }
 
   .mc-port {

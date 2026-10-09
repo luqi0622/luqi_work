@@ -21,6 +21,7 @@
 
 import {
   type ColorToken,
+  type CompKind,
   type DiagResult,
   type MosComp,
   type MosDoc,
@@ -131,6 +132,11 @@ export interface RenderOpts {
   guide?: { axis: 'x' | 'y'; v: number } | null;
   /** 屏幕模式：框选矩形 */
   marquee?: Rect | null;
+  /**
+   * 屏幕模式：从元件库拖出、跟随光标的待放置元件（半透明 ghost）。
+   * 导出模式忽略 —— ghost 是交互反馈，不该进最终产物。
+   */
+  placeGhost?: { kind: CompKind; x: number; y: number } | null;
   /** 导出模式的像素缩放（PNG 2× 时用） */
   pxScale?: number;
   /** 导出模式的背景色，null = 透明 */
@@ -211,10 +217,23 @@ function compSvg(
   }
 
   // 标注（组外，世界坐标，水平）
+  //
+  // 屏幕模式下给标注挂 class/data-* 和透明命中区，这样**可以直接拖动标注**。
+  // 命中区必需：<text> 的可点区域只覆盖字形墨迹，"M1" 这种短标注几乎点不中。
   for (const lb of compLabels(c)) {
+    const attrs = screenMode
+      ? ` class="mc-label" data-comp="${esc(c.id)}" style="cursor:move"`
+      : '';
     parts.push(
-      `<text x="${n(lb.x)}" y="${n(lb.y)}" font-size="${n(lb.size)}" fill="${lb.color === 'muted' ? s.muted : s.ink}" font-weight="${lb.bold ? 600 : 400}" text-anchor="${lb.align}" font-family="ui-sans-serif, system-ui, sans-serif">${esc(lb.text)}</text>`,
+      `<text${attrs} x="${n(lb.x)}" y="${n(lb.y)}" font-size="${n(lb.size)}" fill="${lb.color === 'muted' ? s.muted : s.ink}" font-weight="${lb.bold ? 600 : 400}" text-anchor="${lb.align}" font-family="ui-sans-serif, system-ui, sans-serif">${esc(lb.text)}</text>`,
     );
+    if (screenMode) {
+      // 命中框比文字略大一圈（上下各留半个字号），细标注也好点
+      const tw = estimateTextWidth(lb.text, lb.size) + 6;
+      parts.push(
+        `<rect class="mc-label-hit" data-comp="${esc(c.id)}" x="${n(lb.x - 3)}" y="${n(lb.y - lb.size)}" width="${n(tw)}" height="${n(lb.size * 1.35)}" fill="transparent" pointer-events="all"/>`,
+      );
+    }
   }
 
   // 悬空端口红圈（导出也保留：这是有价值的自检信息）
@@ -367,6 +386,19 @@ export function renderSvg(doc: MosDoc, opts: RenderOpts): string {
       const m = opts.marquee;
       parts.push(
         `<rect x="${n(m.x)}" y="${n(m.y)}" width="${n(m.w)}" height="${n(m.h)}" fill="${cSel}" fill-opacity="0.08" stroke="${cSel}" stroke-width="1" stroke-dasharray="4 3" pointer-events="none"/>`,
+      );
+    }
+    if (opts.placeGhost) {
+      // 用真实符号几何画 ghost，而不是缩略图：缩略图不带端口，
+      // 用户判断「落点会不会压到现有连线」时需要看到端口位置。
+      const g = opts.placeGhost;
+      const fake = { kind: g.kind, x: g.x, y: g.y, rot: 0, flip: false, label: '', color: null } as unknown as MosComp;
+      const gb = compBBox(fake);
+      parts.push(
+        `<g opacity="0.55" pointer-events="none">${compSvg(fake, segStyle, false, false, false)}</g>`,
+      );
+      parts.push(
+        `<rect x="${n(gb.x)}" y="${n(gb.y)}" width="${n(gb.w)}" height="${n(gb.h)}" fill="none" stroke="${cGuide}" stroke-width="1.5" stroke-dasharray="5 4" pointer-events="none"/>`,
       );
     }
   }

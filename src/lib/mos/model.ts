@@ -36,7 +36,7 @@ import {
   isMos,
 } from './types';
 import { compBBox, portNames, portWorld } from './symbols';
-import { wirePts } from './geometry';
+import { snapToGrid, wirePts } from './geometry';
 
 // ============================================================================
 // ID 生成
@@ -243,6 +243,27 @@ export function flipComps(doc: MosDoc, ids: Set<string>): MosDoc {
   };
 }
 
+/**
+ * 把若干元件的标注整体平移。
+ *
+ * 与 `moveComps` 分开是因为**拖标注的意图和拖元件不同** —— 拖元件是改电路拓扑，
+ * 拖标注往往只是为了挪开压住的线。偏移叠加在当前 `labelOff` 上，所以连续
+ * 多次微调不会累积误差；末尾归栅格，避免拖完停在半格上。
+ */
+export function moveLabels(doc: MosDoc, ids: Set<string>, dx: number, dy: number): MosDoc {
+  if (dx === 0 && dy === 0 || ids.size === 0) return doc;
+  return {
+    ...doc,
+    components: doc.components.map((c) => {
+      if (!ids.has(c.id)) return c;
+      const cur = c.labelOff ?? { x: 0, y: 0 };
+      // snapToGrid 收 (x, y) 返回 Pt —— 必须一次传两个分量，
+      // 少传一个会让另一个变 NaN（表现为 JSON 里的 null）
+      return { ...c, labelOff: snapToGrid(cur.x + dx, cur.y + dy) };
+    }),
+  };
+}
+
 export function moveComps(doc: MosDoc, ids: Set<string>, dx: number, dy: number): MosDoc {
   if (dx === 0 && dy === 0) return doc;
   return {
@@ -366,6 +387,8 @@ export interface Selection {
   comps: string[];
   wires: string[];
   texts: string[];
+  /** 选中了「标注」的元件 id（点标注 ≠ 选元件本体） */
+  labels?: string[];
 }
 
 export function copySelection(doc: MosDoc, sel: Selection): MosDoc {
@@ -712,6 +735,12 @@ function normComp(v: unknown, i: number): MosComp | null {
     flip: bool(o.flip, false),
     label: str(o.label),
     color: color(o.color),
+    // 标注偏移/隐藏：脏数据里可能是任意形状，兜底成 null（= 用默认位置）
+    labelOff:
+      o.labelOff && typeof o.labelOff === 'object'
+        ? { x: num((o.labelOff as Record<string, unknown>).x, 0), y: num((o.labelOff as Record<string, unknown>).y, 0) }
+        : undefined,
+    labelHidden: bool(o.labelHidden, false),
   };
 
   switch (kind) {

@@ -448,6 +448,25 @@ export function wireAt(doc: MosDoc, p: Pt, tol = 6): Wire | null {
   return null;
 }
 
+/**
+ * 命中某个元件的**标注**，返回该元件 id。
+ *
+ * 倒序遍历（后画的在上）。容差比 textAt 稍大：标注字号小，
+ * 又是细笔画，没有额外余量的话很难点中。
+ */
+export function labelAt(doc: MosDoc, p: Pt, pad = 3): string | null {
+  for (let i = doc.components.length - 1; i >= 0; i--) {
+    const c = doc.components[i];
+    for (const lb of compLabels(c)) {
+      const b = textBBox(lb.x, lb.y, lb.text, lb.size, lb.align);
+      if (p.x >= b.x - pad && p.x <= b.x + b.w + pad && p.y >= b.y - pad && p.y <= b.y + b.h + pad) {
+        return c.id;
+      }
+    }
+  }
+  return null;
+}
+
 export function textAt(doc: MosDoc, p: Pt): string | null {
   for (let i = doc.texts.length - 1; i >= 0; i--) {
     const t = doc.texts[i];

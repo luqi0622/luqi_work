@@ -47,6 +47,7 @@ import {
   compAt,
   dragVertex,
   ensureMinSize,
+  labelAt,
   nearestPort,
   nearestWirePoint,
   orthoRoute,
@@ -97,7 +98,7 @@ import * as persist from './persist';
 // 交互状态
 // ============================================================================
 
-type DragKind = 'none' | 'pan' | 'comp' | 'wire' | 'bend' | 'marquee' | 'text';
+type DragKind = 'none' | 'pan' | 'comp' | 'wire' | 'bend' | 'marquee | 'text' | 'label' | 'place';
 
 interface DragBase {
   startWorld: Pt;
@@ -118,7 +119,9 @@ type DragState =
   | ({ kind: 'wire'; fromPort: Endpoint; fromDir: Dir; } & DragBase)
   | ({ kind: 'bend'; wireId: string; bendIdx: number } & DragBase)
   | ({ kind: 'marquee'; additive: boolean } & DragBase)
-  | ({ kind: 'text'; textId: string } & DragBase);
+  | ({ kind: 'text'; textId: string } & DragBase)
+  | ({ kind: 'label'; compId: string; labelStart: Pt } & DragBase)
+  | ({ kind: 'place'; placeKind: CompKind } & DragBase);
 
 const NO_DRAG: DragState = {
   kind: 'none',
@@ -181,11 +184,19 @@ export class MosEditor {
   private guide: { axis: 'x' | 'y'; v: number } | null = null;
   private marquee: Rect | null = null;
   private activeBend: { wireId: string; idx: number } | null = null;
+  /** 从元件库拖出、正在跟随光标的待放置元件（kind + 已吸附的世界坐标） */
+  private placeGhost: { kind: CompKind; x: number; y: number } | null = null;
   private spaceDown = false;
   private pointerInside = false;
   private statusMsg = '';
   /** 同类元件连续放置时的偏移计数 */
   private sameKindCount = 0;
+  /**
+   * 拖拽放置松手后抑制紧随的那一次 click。
+   *
+   * 不抑制的话「拖一下」会在落点放一个、中心又放一个。
+   */
+  private suppressNextClick = false;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -234,7 +245,7 @@ export class MosEditor {
 
   <div class="mc-grid">
     <aside class="mc-left" data-el="left">
-      <div class="mc-sec-t">元件库<span class="mc-hint">点击放置</span></div>
+      <div class="mc-sec-t">元件库<span class="mc-hint">拖到画布 / 点击亦可</span></div>
       <div class="mc-chips">${thumbs}</div>
       <div class="mc-sec-t">对齐<span class="mc-hint">需选中 ≥2</span></div>
       <div class="mc-aligns">
@@ -250,7 +261,9 @@ export class MosEditor {
       <dl class="mc-keys">
         <dt>R / Ctrl+R</dt><dd>旋转 / 反向旋转</dd>
         <dt>X</dt><dd>水平镜像</dd>
+        <dt>拖元件库</dt><dd>拖到画布放置</dd>
         <dt>拖端口</dt><dd>连线</dd>
+        <dt>拖标注</dt><dd>挪开压住的文字</dd>
         <dt>点拐点</dt><dd>拖动改形</dd>
         <dt>Alt+点拐点</dt><dd>删除拐点</dd>
         <dt>Ctrl+C/V</dt><dd>复制 / 粘贴</dd>
@@ -386,6 +399,7 @@ export class MosEditor {
       activeBend: this.activeBend,
       guide: this.guide,
       marquee: this.marquee,
+      placeGhost: this.placeGhost,
     });
     this.els.svgwrap.innerHTML = svg;
 
@@ -447,10 +461,13 @@ export class MosEditor {
     const parts: string[] = [];
 
     const one = this.sel.comps.length === 1 ? this.doc.components.find((c) => c.id === this.sel.comps[0]) : undefined;
+    // 只选中标注（没选元件本体）时，检查器仍显示该元件属性 ——
+    // 用户点标注往往就是想改它的名字，而不是想删掉管子。
+    const lblOnly = !one && this.sel.labels?.length === 1 ? this.doc.components.find((c) => c.id === this.sel.labels![0]) : undefined;
     const oneWire = this.sel.wires.length === 1 ? this.doc.wires.find((w) => w.id === this.sel.wires[0]) : undefined;
     const oneText = this.sel.texts.length === 1 ? this.doc.texts.find((t) => t.id === this.sel.texts[0]) : undefined;
 
-    if (one) parts.push(this.compForm(one));
+    if (one || lblOnly) parts.push(this.compForm((one ?? lblOnly)!));
     else if (oneWire) parts.push(this.wireForm(oneWire));
     else if (oneText) parts.push(this.textForm(oneText));
     else if (this.sel.comps.length + this.sel.wires.length + this.sel.texts.length > 1) {
@@ -512,6 +529,11 @@ export class MosEditor {
       `<label class="mc-f"><span>颜色</span><select data-cf="color"><option value="">默认</option>${COLOR_OPTIONS.map((t) => `<option value="${t}" ${c.color === t ? 'selected' : ''}>${colorName(t)}</option>`).join('')}</select></label>`,
     );
 
+    rows.push(
+      `<div class="mc-f2"><button class="mc-abtn" data-cact="labelToggle" title="显示 / 隐藏画布上的标注">${c.labelHidden ? '显示标注' : '隐藏标注'}</button>` +
+        `<button class="mc-abtn" data-cact="labelReset" title="把标注移回元件旁边的默认位置"${c.labelOff ? '' : ' disabled'}>标注复位</button></div>`,
+    );
+
     const ports = portNames(c.kind, isMos(c) ? c.bodyTied : false);
     const portRows = ports
       .map((p) => {
@@ -570,10 +592,35 @@ export class MosEditor {
     host.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-tf]').forEach((el) => {
       el.addEventListener('change', () => this.applyTextField(el.dataset.tf!, el));
     });
+    host.querySelectorAll<HTMLButtonElement>('[data-cact]').forEach((el) => {
+      el.addEventListener('click', () => this.compAction(el.dataset.cact!));
+    });
+  }
+
+  /** 属性面板里的元件级动作（标注显隐 / 复位） */
+  private compAction(act: string): void {
+    // 标注选择态下元件不在 sel.comps 里，两个都认
+    const id = this.sel.comps[0] ?? this.sel.labels?.[0];
+    if (!id) return;
+    const c = this.doc.components.find((k) => k.id === id);
+    if (!c) return;
+    this.beginHistory();
+    if (act === 'labelToggle') {
+      this.doc = updateComp(this.doc, id, { labelHidden: !c.labelHidden });
+      this.setStatus(c.labelHidden ? '已显示标注' : '已隐藏标注');
+    } else if (act === 'labelReset') {
+      // 复位 = 偏移清零。undefined 而非 {0,0}，好让 JSON 里不带冗余字段
+      this.doc = updateComp(this.doc, id, { labelOff: undefined });
+      this.setStatus('标注已回到默认位置');
+    } else {
+      this.history.past.pop();
+      return;
+    }
+    this.commit();
   }
 
   private applyCompField(key: string, el: HTMLInputElement | HTMLSelectElement): void {
-    const id = this.sel.comps[0];
+    const id = this.sel.comps[0] ?? this.sel.labels?.[0];
     if (!id) return;
     let v: unknown = el.value;
     if (el instanceof HTMLInputElement && el.type === 'checkbox') v = el.checked;
@@ -666,6 +713,17 @@ export class MosEditor {
 
     // 工具栏与面板（事件委托，避免重渲染后重新绑定）
     this.root.addEventListener('click', (e) => this.onClick(e));
+
+    // 元件库 chip 的 pointerdown：进入「拖拽放置」模式。
+    //
+    // 用 Pointer Events 而非 HTML5 drag&drop —— 后者在 SVG 画布上拿不到
+    // 可靠的落点（dragover 的坐标要自己换算，ghost 图也无法定制），
+    // 而这里只需要「按下 → 跟手 → 松手落点」，原生 pointer 事件够用。
+    this.root.addEventListener('pointerdown', (e) => {
+      const chip = (e.target as HTMLElement).closest<HTMLElement>('[data-kind]');
+      if (!chip || e.button !== 0) return;
+      this.beginPlaceDrag(chip.dataset.kind as CompKind, e);
+    });
     this.els.title.addEventListener('input', () => {
       this.doc = { ...this.doc, title: this.els.title.value };
       this.scheduleSave();
@@ -705,6 +763,11 @@ export class MosEditor {
 
     const kind = t.closest<HTMLElement>('[data-kind]')?.dataset.kind;
     if (kind) {
+      // 拖拽放置刚处理完这次点击 → 忽略，别再在中心放一个
+      if (this.suppressNextClick) {
+        this.suppressNextClick = false;
+        return;
+      }
       this.placeComp(kind as CompKind);
       return;
     }
@@ -817,27 +880,27 @@ export class MosEditor {
     }
   }
 
-  /**
-   * 从元件库放置元件。
-   *
-   * 落点 = 视口中心 → 过吸附 → 落栅格。
-   * 连续放同一个元件时给个偏移，否则叠在一起完全看不出放没放成功。
-   */
-  private placeComp(kind: CompKind): void {
+/**
+ * 从元件库放置元件。
+ *
+ * 落点 = 视口中心 → 过吸附 → 落栅格。
+ * 连续放同一个元件时给个偏移，否则叠在一起完全看不出放没放成功。
+ */
+private placeComp(kind: CompKind, at?: Pt): void {
+    // 指定落点 = 拖拽放置；不指定 = 点击放置（视口中心）
     const r = this.viewportRect();
-    const cx = r.left + r.width / 2;
-    const cy = r.top + r.height / 2;
-    const world = screenToWorld(cx, cy, r, this.view);
+    let world: Pt;
+    if (at) {
+      world = at;
+    } else {
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      world = screenToWorld(cx, cy, r, this.view);
+      this.sameKindCount = this.doc.components.filter((c) => c.kind === kind).length;
+      world = { x: world.x + (this.sameKindCount % 5) * GRID * 2, y: world.y + (this.sameKindCount % 5) * GRID * 2 };
+    }
 
-    this.sameKindCount = this.doc.components.filter((c) => c.kind === kind).length;
-    const jitter = (this.sameKindCount % 5) * GRID * 2;
-
-    const s = snapPoint(
-      this.doc,
-      { x: world.x + jitter, y: world.y + jitter },
-      { snapGrid: this.doc.snapGrid, snapTrack: this.doc.snapTrack },
-      0,
-    );
+    const s = snapPoint(this.doc, world, { snapGrid: this.doc.snapGrid, snapTrack: this.doc.snapTrack }, 0);
     const p = this.doc.snapGrid ? snapToGrid(s.x, s.y) : { x: s.x, y: s.y };
 
     this.beginHistory();
@@ -846,6 +909,71 @@ export class MosEditor {
     this.sel = { comps: [c.id], wires: [], texts: [] };
     this.commit();
     this.setStatus(`已放置 ${COMP_LABEL[kind]}${c.label ? ` ${c.label}` : ''}，拖端口即可连线`);
+  }
+
+  /**
+   * 开始从元件库拖出一个元件。
+   *
+   * **按下即进入待放置态，但松手前不落子**。若光标始终没离开 chip
+   * （原地松手 = 传统点击），退回 `placeComp()` 的视口中心放置 ——
+   * 这样「点击放置」和「拖拽放置」共用一条代码路径，行为不分裂。
+   */
+  private beginPlaceDrag(kind: CompKind, e: PointerEvent): void {
+    const onMove = (ev: PointerEvent): void => {
+      const p = this.placePointAt(ev.clientX, ev.clientY);
+      const moved = Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) > 4;
+      this.placeGhost = moved ? { kind, x: p.x, y: p.y } : null;
+      if (moved) this.updateGuide();
+      this.renderAll();
+    };
+    const finish = (ev: PointerEvent): void => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', cancel);
+      const g = this.placeGhost;
+      this.placeGhost = null;
+      this.guide = null;
+      if (g) {
+        this.placeComp(kind, { x: g.x, y: g.y });
+      } else {
+        // 没拖动 → 视为点击放置（视口中心）
+        this.placeComp(kind);
+      }
+      // 抑制紧随其后的 click：pointerup 之后浏览器还会派发 click，
+      // 若不拦一下会在中心再放一个元件（拖一次得到两个）。
+      ev.preventDefault();
+      this.suppressNextClick = true;
+      this.renderAll();
+    };
+    const cancel = (): void => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', cancel);
+      this.placeGhost = null;
+      this.guide = null;
+      this.renderAll();
+    };
+
+    this.drag = { kind: 'place', placeKind: kind, startWorld: { x: 0, y: 0 }, startClient: { x: e.clientX, y: e.clientY } };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', cancel);
+    e.preventDefault();
+  }
+
+  /**
+   * 光标处待放置元件的落点（已吸附）。
+   *
+   * 拖拽过程中实时算，用于画半透明ghost；松手时用同一个函数取最终位置 ——
+   * **预览和落点必须同源**，否则会出现「幽灵在某处、元件落在别处」。
+   */
+  private placePointAt(clientX: number, clientY: number): Pt {
+    const r = this.viewportRect();
+    const inside = clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+    const world = screenToWorld(clientX, clientY, r, this.view);
+    if (!inside) return { x: world.x, y: world.y };
+    const s = snapPoint(this.doc, world, { snapGrid: this.doc.snapGrid, snapTrack: this.doc.snapTrack }, 0);
+    return this.doc.snapGrid ? snapToGrid(s.x, s.y) : { x: s.x, y: s.y };
   }
 
   private async onFileChosen(file: File): Promise<void> {
@@ -939,7 +1067,25 @@ export class MosEditor {
       return;
     }
 
-    // 3) 元件
+    // 3) 标注 —— 必须在「元件」之前判断。
+    //
+    // 标注画在 bbox 右侧的空白处，和元件本体不重叠，但元件的**透明命中
+    // 矩形**可能盖到它（尤其标注被拖近时）。先判标注才能保证「拖文字」
+    // 不会变成「拖元件」。
+    const lblId = labelAt(this.doc, w);
+    if (lblId) {
+      this.selectOne(lblId, e.shiftKey);
+      this.sel = { ...this.sel, comps: [], labels: [lblId] };
+      this.beginHistory();
+      const lblComp = this.doc.components.find((k) => k.id === lblId);
+      const labelStart = lblComp?.labelOff ?? { x: 0, y: 0 };
+      this.drag = { kind: 'label', ...base, compId: lblId, labelStart: { ...labelStart } };
+      this.els.viewport.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
+
+    // 4) 元件
     const comp = compAt(this.doc, w);
     if (comp) {
       this.selectOne(comp.id, e.shiftKey);
@@ -1022,6 +1168,24 @@ export class MosEditor {
           return o ? { ...c, x: o.x + snapped.x, y: o.y + snapped.y } : c;
         }),
       };
+      this.updateGuide();
+      this.renderAll();
+      return;
+    }
+
+    if (d.kind === 'label') {
+      // 用「拖拽起点时的 labelOff + 增量」算绝对值，而不是每帧累加 ——
+      // 累加会在拖回原位时留下非零偏移，且栅格取整误差会累积。
+      let dx = w.x - d.startWorld.x;
+      let dy = w.y - d.startWorld.y;
+      if (e.shiftKey) {
+        if (Math.abs(dx) > Math.abs(dy)) dy = 0;
+        else dx = 0;
+      }
+      const snapped = this.doc.snapGrid ? snapToGrid(dx, dy) : { x: dx, y: dy };
+      this.doc = updateComp(this.doc, d.compId, {
+        labelOff: { x: snapToGrid(d.labelStart.x + snapped.x), y: snapToGrid(d.labelStart.y + snapped.y) },
+      });
       this.updateGuide();
       this.renderAll();
       return;
@@ -1110,6 +1274,10 @@ export class MosEditor {
           this.history.past.pop();
         }
         break;
+      case 'label':
+      this.commit();
+      this.setStatus('已移动标注');
+      break;
       case 'text':
       case 'bend':
         this.commit();
@@ -1334,9 +1502,41 @@ export class MosEditor {
     }
 
     if (e.key === 'Delete' || e.key === 'Backspace') {
+      // 选中的是**标注** → 删标注，而不是删掉整个元件。
+      // 这是最容易被误伤的一步：用户点了一下文字就按 Del，
+      // 结果管子消失了。所以标注选择必须优先于元件选择。
+      if (this.sel.labels?.length) {
+        e.preventDefault();
+        this.beginHistory();
+        const ids = new Set(this.sel.labels);
+        this.doc = {
+          ...this.doc,
+          components: this.doc.components.map((c) => (ids.has(c.id) ? { ...c, labelHidden: true } : c)),
+        };
+        this.sel = { comps: [], wires: [], texts: [] };
+        this.commit();
+        this.setStatus('已隐藏标注（属性面板可恢复）');
+        return;
+      }
       if (!this.sel.comps.length && !this.sel.wires.length && !this.sel.texts.length) return;
       e.preventDefault();
       this.deleteSelection();
+      return;
+    }
+
+    // 恢复被隐藏的标注
+    if ((e.key === 'u' || e.key === 'U') && e.altKey) {
+      const hidden = this.doc.components.filter((c) => c.labelHidden);
+      if (!hidden.length) return;
+      e.preventDefault();
+      this.beginHistory();
+      const ids = new Set(hidden.map((c) => c.id));
+      this.doc = {
+        ...this.doc,
+        components: this.doc.components.map((c) => (ids.has(c.id) ? { ...c, labelHidden: false } : c)),
+      };
+      this.commit();
+      this.setStatus(`已恢复 ${hidden.length} 个标注`);
       return;
     }
 
